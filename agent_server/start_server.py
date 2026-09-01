@@ -5,21 +5,19 @@ from pathlib import Path
 import httpx
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import Request
+from fastapi import FastAPI, Request
 from fastapi.responses import Response, StreamingResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 # Load env vars from .env before importing the agent for proper auth
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
 
-# Import app — routes are registered at import time
-from agent_server.agent import app  # noqa: E402
+from agent_server.routes import router  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 # ── Chat proxy middleware ──────────────────────────────────────────────────────
-# Mirrors AgentServer's enable_chat_proxy=True behaviour:
-# proxies frontend paths to the Next.js app on CHAT_APP_PORT.
+# Proxies frontend paths to the Next.js app on CHAT_APP_PORT.
 
 _CHAT_PORT = os.environ.get("CHAT_APP_PORT", "3000")
 _PROXY_TIMEOUT = float(os.environ.get("CHAT_PROXY_TIMEOUT_SECONDS", "300"))
@@ -65,6 +63,8 @@ class ChatProxyMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+app = FastAPI(title="Agent API")
+app.include_router(router)
 app.add_middleware(ChatProxyMiddleware)
 
 
