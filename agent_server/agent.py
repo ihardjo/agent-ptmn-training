@@ -129,3 +129,13 @@ async def chat_completions(request: ChatRequest, http_request: Request):
             }
         ],
     }
+
+
+@app.post("/invocations")
+async def invocations_compat(body: dict, http_request: Request):
+    """Compatibility shim for the React chat UI and any caller using the ResponsesAgent format."""
+    messages = [ChatMessage(**m) for m in body.get("input", [])]
+    return await chat_completions(
+        ChatRequest(messages=messages, stream=body.get("stream", False)),
+        http_request,
+    )
