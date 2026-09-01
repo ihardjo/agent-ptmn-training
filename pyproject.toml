@@ -1,7 +1,7 @@
 [project]
 name = "agent-server"
 version = "0.1.0"
-description = "MLflow-compatible agent server with FastAPI"
+description = "FastAPI agent server with OpenAI Chat Completions interface"
 readme = "README.md"
 authors = [
     { name = "Agent Developer", email = "developer@example.com" }
@@ -12,7 +12,6 @@ dependencies = [
     "uvicorn>=0.41.0",
     "databricks-langchain>=0.17.0",
     "databricks-agents>=1.9.3",
-    "mlflow>=3.10.0",
     "langgraph>=1.1.0",
     "langchain-mcp-adapters>=0.2.1",
     "python-dotenv>=1.2.1",
@@ -43,6 +42,5 @@ default-groups = ["dev", "setup"]
 quickstart = "scripts.quickstart:main"
 start-app = "scripts.start_app:main"
 start-server = "agent_server.start_server:main"
-agent-evaluate = "agent_server.evaluate_agent:evaluate"
 discover-tools = "scripts.discover_tools:main"
 preflight = "scripts.preflight:main"
