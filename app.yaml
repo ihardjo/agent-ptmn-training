@@ -14,3 +14,10 @@ env:
     value: "300"
   - name: MLFLOW_EXPERIMENT_ID
     valueFrom: "experiment"
+  # Langfuse observability (optional — agent starts without these)
+  - name: LANGFUSE_PUBLIC_KEY
+    value: "pk-lf-85db9caf-990d-44f1-9e5e-a207ecb355bd"
+  - name: LANGFUSE_SECRET_KEY
+    valueFrom: "langfuse-secret"
+  - name: LANGFUSE_HOST
+    value: "https://agentmonitoring.pertamina.ai"
