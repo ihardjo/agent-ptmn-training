@@ -1,33 +1,50 @@
 import logging
 from datetime import datetime
-from typing import AsyncGenerator, Optional
+from typing import Optional
 
 from databricks.sdk import WorkspaceClient
 from databricks_langchain import ChatDatabricks, DatabricksMCPServer, DatabricksMultiServerMCPClient
+from fastapi import FastAPI, Request
+from fastapi.responses import StreamingResponse
 from langchain.agents import create_agent
 from langchain_core.tools import tool
 from langfuse import propagate_attributes
 from langfuse.langchain import CallbackHandler
-from mlflow.genai.agent_server import invoke, stream
-from mlflow.types.responses import (
-    ResponsesAgentRequest,
-    ResponsesAgentResponse,
-    ResponsesAgentStreamEvent,
-    to_chat_completions_input,
-)
+from pydantic import BaseModel
 
 from agent_server.utils import (
+    collect_chat_completion_content,
     get_databricks_host_from_env,
-    get_session_id,
-    get_user_workspace_client,
-    process_agent_astream_events,
+    new_completion_id,
+    stream_to_chat_completions_chunks,
 )
 
 logger = logging.getLogger(__name__)
 langfuse_handler = CallbackHandler()
-logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
 sp_workspace_client = WorkspaceClient()
 
+app = FastAPI(title="Agent API")
+
+
+# ── Request / Response models ──────────────────────────────────────────────────
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str | list | None = None
+    name: str | None = None
+
+    model_config = {"extra": "allow"}
+
+
+class ChatRequest(BaseModel):
+    model: str = "agent"
+    messages: list[ChatMessage]
+    stream: bool = False
+
+    model_config = {"extra": "allow"}
+
+
+# ── Tools ──────────────────────────────────────────────────────────────────────
 
 @tool
 def get_current_time() -> str:
@@ -59,34 +76,56 @@ async def init_agent(workspace_client: Optional[WorkspaceClient] = None):
     return create_agent(tools=tools, model=ChatDatabricks(endpoint="databricks-gpt-5-2"))
 
 
-@invoke()
-async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
-    outputs = [
-        event.item
-        async for event in stream_handler(request)
-        if event.type == "response.output_item.done"
-    ]
-    return ResponsesAgentResponse(output=outputs)
+# ── Routes ─────────────────────────────────────────────────────────────────────
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 
-@stream()
-async def stream_handler(
-    request: ResponsesAgentRequest,
-) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
-    session_id = get_session_id(request)
-
-    # By default, uses service principal credentials.
-    # For on-behalf-of user authentication, use get_user_workspace_client() instead:
-    #   agent = await init_agent(workspace_client=get_user_workspace_client())
+@app.post("/v1/chat/completions")
+async def chat_completions(request: ChatRequest, http_request: Request):
+    session_id = http_request.headers.get("X-Session-Id")
     agent = await init_agent()
-    messages = {"messages": to_chat_completions_input([i.model_dump() for i in request.input])}
+    messages = {"messages": [{"role": m.role, "content": m.content} for m in request.messages]}
 
+    if request.stream:
+        completion_id = new_completion_id()
+
+        async def generate():
+            with propagate_attributes(session_id=session_id):
+                async for chunk in stream_to_chat_completions_chunks(
+                    agent.astream(
+                        input=messages,
+                        stream_mode=["updates", "messages"],
+                        config={"callbacks": [langfuse_handler]},
+                    ),
+                    completion_id=completion_id,
+                    model=request.model,
+                ):
+                    yield chunk
+
+        return StreamingResponse(generate(), media_type="text/event-stream")
+
+    completion_id = new_completion_id()
     with propagate_attributes(session_id=session_id):
-        async for event in process_agent_astream_events(
+        content = await collect_chat_completion_content(
             agent.astream(
                 input=messages,
                 stream_mode=["updates", "messages"],
                 config={"callbacks": [langfuse_handler]},
             )
-        ):
-            yield event
+        )
+
+    return {
+        "id": completion_id,
+        "object": "chat.completion",
+        "model": request.model,
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": "stop",
+            }
+        ],
+    }

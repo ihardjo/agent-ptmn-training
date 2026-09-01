@@ -220,7 +220,7 @@ class ProcessManager:
                 self.no_ui = True
             else:
                 # Set API_PROXY environment variable for frontend to connect to backend
-                os.environ["API_PROXY"] = f"http://localhost:{self.port}/invocations"
+                os.environ["API_PROXY"] = f"http://localhost:{self.port}/v1/chat/completions"
 
         # Open log files
         self.backend_log = open("backend.log", "w", buffering=1)
