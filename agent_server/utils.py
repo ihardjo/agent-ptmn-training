@@ -85,6 +85,50 @@ async def stream_to_chat_completions_chunks(
     yield "data: [DONE]\n\n"
 
 
+def _responses_sse(event: dict) -> str:
+    return f"data: {json.dumps(event)}\n\n"
+
+
+async def stream_to_responses_api_chunks(
+    async_stream: AsyncIterator[Any],
+    item_id: str,
+) -> AsyncGenerator[str, None]:
+    """Convert LangGraph astream events to OpenAI Responses API SSE events.
+
+    The Databricks ai-sdk-provider responses() client parses these event types:
+      response.output_text.delta  — streamed text chunk
+      response.output_item.done   — final assembled message
+    """
+    full_text: list[str] = []
+
+    async for event in async_stream:
+        event_type, event_data = event[0], event[1]
+        if event_type == "messages":
+            try:
+                chunk = event_data[0]
+                if isinstance(chunk, AIMessageChunk) and chunk.content:
+                    full_text.append(chunk.content)
+                    yield _responses_sse(
+                        {"type": "response.output_text.delta", "item_id": item_id, "delta": chunk.content}
+                    )
+            except Exception as e:
+                logger.exception(f"Error processing message chunk: {e}")
+
+    text = "".join(full_text)
+    yield _responses_sse(
+        {
+            "type": "response.output_item.done",
+            "output_index": 0,
+            "item": {
+                "type": "message",
+                "id": item_id,
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": text}],
+            },
+        }
+    )
+
+
 async def collect_chat_completion_content(
     async_stream: AsyncIterator[Any],
 ) -> str:

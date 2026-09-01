@@ -18,6 +18,7 @@ from agent_server.utils import (
     new_completion_id,
     normalize_content,
     stream_to_chat_completions_chunks,
+    stream_to_responses_api_chunks,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,9 +82,48 @@ async def chat_completions(request: ChatRequest, http_request: Request):
 
 @router.post("/invocations")
 async def invocations_compat(body: dict, http_request: Request):
-    """Compatibility shim for the React chat UI and any caller using the ResponsesAgent format."""
+    """Handle requests from the React chat UI which uses the OpenAI Responses API format.
+
+    The Databricks ai-sdk-provider responses() client sends input as a list of messages
+    and expects SSE events: response.output_text.delta + response.output_item.done.
+    """
+    session_id = http_request.headers.get("X-Session-Id") or body.get("context", {}).get("conversation_id")
     messages = [ChatMessage(**m) for m in body.get("input", [])]
-    return await chat_completions(
-        ChatRequest(messages=messages, stream=body.get("stream", False)),
-        http_request,
-    )
+    agent = await init_agent()
+    lg_messages = {"messages": [{"role": m.role, "content": normalize_content(m.content)} for m in messages]}
+    item_id = new_completion_id()
+
+    if body.get("stream", False):
+        async def generate():
+            with propagate_attributes(session_id=session_id):
+                async for chunk in stream_to_responses_api_chunks(
+                    agent.astream(
+                        input=lg_messages,
+                        stream_mode=["updates", "messages"],
+                        config={"callbacks": [langfuse_handler]},
+                    ),
+                    item_id=item_id,
+                ):
+                    yield chunk
+
+        return StreamingResponse(generate(), media_type="text/event-stream")
+
+    with propagate_attributes(session_id=session_id):
+        content = await collect_chat_completion_content(
+            agent.astream(
+                input=lg_messages,
+                stream_mode=["updates", "messages"],
+                config={"callbacks": [langfuse_handler]},
+            )
+        )
+
+    return {
+        "output": [
+            {
+                "type": "message",
+                "id": item_id,
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": content}],
+            }
+        ]
+    }
