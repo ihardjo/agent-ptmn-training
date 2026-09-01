@@ -4,7 +4,7 @@ bundle:
 resources:
   apps:
     agent_langgraph:
-      name: "agent-langgraph"
+      name: "agent-ptmn-training"
       description: "LangGraph agent application"
       source_code_path: ./
       config:
@@ -22,12 +22,19 @@ resources:
             value: "300"
           - name: MLFLOW_EXPERIMENT_ID
             value_from: "experiment"
+          # Langfuse observability (optional — agent starts without these)
+          - name: LANGFUSE_PUBLIC_KEY
+            value: "pk-lf-85db9caf-990d-44f1-9e5e-a207ecb355bd"
+          - name: LANGFUSE_SECRET_KEY
+            value: ""
+          - name: LANGFUSE_HOST
+            value: "https://agentmonitoring.pertamina.ai"
 
       # Resources which this app has access to
       resources:
         - name: 'experiment'
           experiment:
-            experiment_id: ""
+            experiment_id: "968770842993141"
             permission: 'CAN_MANAGE'
 
 targets:

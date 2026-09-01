@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from dotenv import load_dotenv
-from mlflow.genai.agent_server import AgentServer, setup_mlflow_git_based_version_tracking
+from mlflow.genai.agent_server import AgentServer
 
 # Load env vars from .env before importing the agent for proper auth
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
@@ -13,7 +13,6 @@ agent_server = AgentServer("ResponsesAgent", enable_chat_proxy=True)
 
 # Define the app as a module level variable to enable multiple workers
 app = agent_server.app  # noqa: F841
-setup_mlflow_git_based_version_tracking()
 
 
 def main():
