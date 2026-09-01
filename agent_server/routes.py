@@ -6,7 +6,13 @@ from langfuse import propagate_attributes
 from langfuse.langchain import CallbackHandler
 
 from agent_server.agent import init_agent
-from agent_server.models import ChatMessage, ChatRequest
+from agent_server.models import (
+    AssistantMessage,
+    ChatCompletionChoice,
+    ChatCompletionResponse,
+    ChatMessage,
+    ChatRequest,
+)
 from agent_server.utils import (
     collect_chat_completion_content,
     new_completion_id,
@@ -24,7 +30,7 @@ async def health():
     return {"status": "ok"}
 
 
-@router.post("/v1/chat/completions")
+@router.post("/v1/chat/completions", response_model=ChatCompletionResponse)
 async def chat_completions(request: ChatRequest, http_request: Request):
     session_id = http_request.headers.get("X-Session-Id")
     agent = await init_agent()
@@ -58,18 +64,18 @@ async def chat_completions(request: ChatRequest, http_request: Request):
             )
         )
 
-    return {
-        "id": completion_id,
-        "object": "chat.completion",
-        "model": request.model,
-        "choices": [
-            {
-                "index": 0,
-                "message": {"role": "assistant", "content": content},
-                "finish_reason": "stop",
-            }
+    return ChatCompletionResponse(
+        id=completion_id,
+        object="chat.completion",
+        model=request.model,
+        choices=[
+            ChatCompletionChoice(
+                index=0,
+                message=AssistantMessage(role="assistant", content=content),
+                finish_reason="stop",
+            )
         ],
-    }
+    )
 
 
 @router.post("/invocations")
