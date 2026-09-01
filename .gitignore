@@ -226,3 +226,10 @@ sketch
 **/.env
 **/.env.local
 load-test-runs/
+
+# Cloned frontend (fetched at runtime by start-app)
+e2e-chatbot-app-next/
+
+# Process logs written by start-app
+backend.log
+frontend.log

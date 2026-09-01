@@ -1,64 +1,93 @@
+import json
 import logging
-from typing import Any, AsyncGenerator, AsyncIterator, Optional
+import uuid
+from typing import Any, AsyncGenerator, AsyncIterator
 
 from databricks.sdk import WorkspaceClient
-from databricks_langchain.chat_models import json
-from langchain.messages import AIMessageChunk, ToolMessage
-from mlflow.genai.agent_server import get_request_headers
-from mlflow.types.responses import (
-    ResponsesAgentRequest,
-    ResponsesAgentStreamEvent,
-    create_text_delta,
-    output_to_responses_items_stream,
-)
+from langchain.messages import AIMessageChunk
+
+logger = logging.getLogger(__name__)
 
 
-def get_session_id(request: ResponsesAgentRequest) -> str | None:
-    if request.context and request.context.conversation_id:
-        return request.context.conversation_id
-    if request.custom_inputs and isinstance(request.custom_inputs, dict):
-        return request.custom_inputs.get("session_id")
-    return None
-
-
-def get_user_workspace_client() -> WorkspaceClient:
-    token = get_request_headers().get("x-forwarded-access-token")
-    return WorkspaceClient(token=token, auth_type="pat")
-
-
-def get_databricks_host_from_env() -> Optional[str]:
+def get_databricks_host_from_env() -> str | None:
     try:
-        w = WorkspaceClient()
-        return w.config.host
+        return WorkspaceClient().config.host
     except Exception as e:
-        logging.exception(f"Error getting databricks host from env: {e}")
+        logger.exception(f"Error getting Databricks host from env: {e}")
         return None
 
 
-async def process_agent_astream_events(
-    async_stream: AsyncIterator[Any],
-) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
-    """
-    Generic helper to process agent stream events and yield ResponsesAgentStreamEvent objects.
+def new_completion_id() -> str:
+    return f"chatcmpl-{uuid.uuid4().hex[:12]}"
 
-    Args:
-        async_stream: The async iterator from agent.astream()
-    """
+
+def normalize_content(content: str | list | None) -> str | None:
+    """Flatten Responses API content parts (type: input_text) to a plain string."""
+    if not isinstance(content, list):
+        return content
+    return "".join(
+        part.get("text", "") if isinstance(part, dict) else str(part)
+        for part in content
+    )
+
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+def _chat_chunk(completion_id: str, model: str, delta: dict, finish_reason=None) -> str:
+    return _sse({
+        "id": completion_id,
+        "object": "chat.completion.chunk",
+        "model": model,
+        "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
+    })
+
+
+async def _iter_text_chunks(async_stream: AsyncIterator[Any]) -> AsyncGenerator[str, None]:
+    """Yield raw text strings from LangGraph astream 'messages' events."""
     async for event in async_stream:
-        if event[0] == "updates":
-            for node_data in event[1].values():
-                if len(node_data.get("messages", [])) > 0:
-                    for msg in node_data["messages"]:
-                        if isinstance(msg, ToolMessage) and not isinstance(msg.content, str):
-                            msg.content = json.dumps(msg.content)
-                    for item in output_to_responses_items_stream(node_data["messages"]):
-                        yield item
-        elif event[0] == "messages":
-            try:
-                chunk = event[1][0]
-                if isinstance(chunk, AIMessageChunk) and (content := chunk.content):
-                    yield ResponsesAgentStreamEvent(
-                        **create_text_delta(delta=content, item_id=chunk.id)
-                    )
-            except Exception as e:
-                logging.exception(f"Error processing agent stream event: {e}")
+        if event[0] == "messages" and event[1]:
+            chunk = event[1][0]
+            if isinstance(chunk, AIMessageChunk) and chunk.content:
+                yield chunk.content
+
+
+async def stream_to_chat_completions_chunks(
+    async_stream: AsyncIterator[Any],
+    completion_id: str,
+    model: str = "agent",
+) -> AsyncGenerator[str, None]:
+    yield _chat_chunk(completion_id, model, {"role": "assistant", "content": ""})
+    async for text in _iter_text_chunks(async_stream):
+        yield _chat_chunk(completion_id, model, {"content": text})
+    yield _chat_chunk(completion_id, model, {}, finish_reason="stop")
+    yield "data: [DONE]\n\n"
+
+
+async def stream_to_responses_api_chunks(
+    async_stream: AsyncIterator[Any],
+    item_id: str,
+) -> AsyncGenerator[str, None]:
+    """Emit Responses API SSE events consumed by the Databricks ai-sdk-provider responses() client."""
+    parts: list[str] = []
+    async for text in _iter_text_chunks(async_stream):
+        parts.append(text)
+        yield _sse({"type": "response.output_text.delta", "item_id": item_id, "delta": text})
+    yield _sse({
+        "type": "response.output_item.done",
+        "output_index": 0,
+        "item": {
+            "type": "message",
+            "id": item_id,
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": "".join(parts)}],
+        },
+    })
+
+
+async def collect_chat_completion_content(async_stream: AsyncIterator[Any]) -> str:
+    parts: list[str] = []
+    async for text in _iter_text_chunks(async_stream):
+        parts.append(text)
+    return "".join(parts)
