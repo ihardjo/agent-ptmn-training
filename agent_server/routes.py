@@ -16,6 +16,7 @@ from agent_server.models import (
 from agent_server.utils import (
     collect_chat_completion_content,
     new_completion_id,
+    normalize_content,
     stream_to_chat_completions_chunks,
 )
 
@@ -34,7 +35,7 @@ async def health():
 async def chat_completions(request: ChatRequest, http_request: Request):
     session_id = http_request.headers.get("X-Session-Id")
     agent = await init_agent()
-    messages = {"messages": [{"role": m.role, "content": m.content} for m in request.messages]}
+    messages = {"messages": [{"role": m.role, "content": normalize_content(m.content)} for m in request.messages]}
 
     if request.stream:
         completion_id = new_completion_id()

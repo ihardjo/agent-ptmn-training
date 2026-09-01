@@ -26,6 +26,22 @@ def new_completion_id() -> str:
     return f"chatcmpl-{uuid.uuid4().hex[:12]}"
 
 
+def normalize_content(content: str | list | None) -> str | None:
+    """Flatten Responses API content parts (type: input_text) to a plain string.
+
+    The React UI sends content as [{"type": "input_text", "text": "..."}] which
+    is the Responses API format. ChatDatabricks expects either a plain string or
+    Chat Completions content parts (type: "text"). Flattening to a string is safe
+    for this text-only agent.
+    """
+    if not isinstance(content, list):
+        return content
+    return "".join(
+        part.get("text", "") if isinstance(part, dict) else str(part)
+        for part in content
+    )
+
+
 def _sse_chunk(completion_id: str, model: str, delta: dict, finish_reason=None) -> str:
     payload = {
         "id": completion_id,
