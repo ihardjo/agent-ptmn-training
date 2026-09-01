@@ -26,7 +26,7 @@ resources:
           - name: LANGFUSE_PUBLIC_KEY
             value: "pk-lf-85db9caf-990d-44f1-9e5e-a207ecb355bd"
           - name: LANGFUSE_SECRET_KEY
-            value: ""
+            value_from: "langfuse-secret"
           - name: LANGFUSE_HOST
             value: "https://agentmonitoring.pertamina.ai"
 
@@ -36,6 +36,11 @@ resources:
           experiment:
             experiment_id: "968770842993141"
             permission: 'CAN_MANAGE'
+        - name: 'langfuse-secret'
+          secret:
+            scope: agent-ptmn-training
+            key: langfuse-secret-key
+            permission: 'READ'
 
 targets:
   dev:
