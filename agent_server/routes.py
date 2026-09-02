@@ -1,4 +1,5 @@
 import logging
+import os
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
@@ -25,6 +26,29 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def trace_config(session_id: str | None = None) -> dict:
+    """Langfuse callbacks for one run, or an empty config when no host is set.
+
+    The gate is the host, and it has to live here: `CallbackHandler` accepts no
+    host argument, so the environment is the only place the decision can be made,
+    and an unset host resolves to https://cloud.langfuse.com inside the SDK. Keys
+    left in place while the host is dropped would therefore ship prompts and tool
+    output to a third-party SaaS rather than fail — the opposite of what pointing
+    at a self-hosted instance is for. LANGFUSE_BASE_URL wins over LANGFUSE_HOST,
+    matching the SDK's own precedence.
+
+    Missing keys get no branch: the SDK logs and disables the client itself.
+    """
+    host = os.environ.get("LANGFUSE_BASE_URL") or os.environ.get("LANGFUSE_HOST")
+    if not host:
+        logger.info("No LANGFUSE_HOST — this run will not be traced.")
+        return {}
+    config: dict = {"callbacks": [CallbackHandler()]}
+    if session_id:
+        config["metadata"] = {"langfuse_session_id": session_id}
+    return config
+
+
 @router.get("/health")
 async def health():
     return {"status": "ok"}
@@ -35,7 +59,6 @@ async def chat_completions(request: ChatRequest, http_request: Request):
     session_id = http_request.headers.get("X-Session-Id")
     agent = await init_agent()
     messages = {"messages": [{"role": m.role, "content": normalize_content(m.content)} for m in request.messages]}
-    langfuse_handler = CallbackHandler(session_id=session_id)
 
     if request.stream:
         completion_id = new_completion_id()
@@ -45,7 +68,7 @@ async def chat_completions(request: ChatRequest, http_request: Request):
                 agent.astream(
                     input=messages,
                     stream_mode=["updates", "messages"],
-                    config={"callbacks": [langfuse_handler]},
+                    config=trace_config(session_id),
                 ),
                 completion_id=completion_id,
                 model=request.model,
@@ -59,7 +82,7 @@ async def chat_completions(request: ChatRequest, http_request: Request):
         agent.astream(
             input=messages,
             stream_mode=["updates", "messages"],
-            config={"callbacks": [langfuse_handler]},
+            config=trace_config(),
         )
     )
 
@@ -89,7 +112,6 @@ async def invocations_compat(body: dict, http_request: Request):
     agent = await init_agent()
     lg_messages = {"messages": [{"role": m.role, "content": normalize_content(m.content)} for m in messages]}
     item_id = new_completion_id()
-    langfuse_handler = CallbackHandler(session_id=session_id)
 
     if body.get("stream", False):
         async def generate():
@@ -97,7 +119,7 @@ async def invocations_compat(body: dict, http_request: Request):
                 agent.astream(
                     input=lg_messages,
                     stream_mode=["updates", "messages"],
-                    config={"callbacks": [langfuse_handler]},
+                    config=trace_config(session_id),
                 ),
                 item_id=item_id,
             ):
@@ -109,7 +131,7 @@ async def invocations_compat(body: dict, http_request: Request):
         agent.astream(
             input=lg_messages,
             stream_mode=["updates", "messages"],
-            config={"callbacks": [langfuse_handler]},
+            config=trace_config(),
         )
     )
 
