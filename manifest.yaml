@@ -1,9 +1,3 @@
 version: 1
 name: "Agent - LangGraph"
-description: "A conversational agent backend and UI using LangGraph and MLflow AgentServer"
-
-resource_specs:
-  - name: "experiment"
-    description: "The destination experiment for traces from the agent's execution."
-    experiment_spec:
-      permission: "CAN_EDIT"
+description: "A conversational agent backend and UI using LangGraph and FastAPI"
