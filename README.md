@@ -2,9 +2,9 @@
 
 This template defines a conversational agent app. The app comes with a built-in chat UI, but also exposes an API endpoint for invoking the agent so that you can serve your UI elsewhere (e.g. on your website or in a mobile app).
 
-The agent in this template implements the [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses) interface. It ships with a sample `get_current_time` tool. The agent code includes commented-out examples showing how to connect to [Databricks MCP servers](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool) (including the built-in code interpreter, Vector Search, Genie, and UC functions). You can customize agent code and test it via the API or UI.
+The agent implements the [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat) interface, served by a plain FastAPI app. It ships with a sample `get_current_time` tool. The agent code includes commented-out examples showing how to connect to [Databricks MCP servers](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool) (including the built-in code interpreter, Vector Search, Genie, and UC functions). You can customize agent code and test it via the API or UI.
 
-The agent input and output format are defined by MLflow's ResponsesAgent interface, which closely follows the [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses) interface. See [the MLflow docs](https://mlflow.org/docs/latest/genai/flavors/responses-agent-intro/) for input and output formats for streaming and non-streaming requests, tracing requirements, and other agent authoring details.
+Endpoints: `POST /v1/chat/completions` (primary), `POST /invocations` (compatibility shim), `GET /health`. Both POST routes support streaming via `"stream": true`. Tracing is handled by [Langfuse](https://langfuse.com) and is optional — the agent starts and serves normally without it.
 
 ## Build with AI Assistance
 
@@ -18,8 +18,7 @@ This script will:
 
 1. Verify uv, nvm, and Databricks CLI installations
 2. Configure Databricks authentication
-3. Configure agent tracing, by creating and linking an MLflow experiment to your app
-4. Start the agent server and chat app
+3. Start the agent server and chat app
 
 ```bash
 uv run quickstart
@@ -78,25 +77,15 @@ This will start the agent server and the chat app at http://localhost:8000.
 
    See the [Databricks SDK authentication docs](https://docs.databricks.com/aws/en/dev-tools/sdk-python#authenticate-the-databricks-sdk-for-python-with-your-databricks-account-or-workspace).
 
-3. **Create and link an MLflow experiment to your app**
+3. **Configure local environment**
 
-   Create an MLflow experiment to enable tracing and version tracking. This is automatically done by the `uv run quickstart` script.
-
-   Create the MLflow experiment via the CLI:
-
-   ```bash
-   DATABRICKS_USERNAME=$(databricks current-user me | jq -r .userName)
-   databricks experiments create-experiment /Users/$DATABRICKS_USERNAME/agents-on-apps
-   ```
-
-   Make a copy of `.env.example` to `.env` and update the `MLFLOW_EXPERIMENT_ID` in your `.env` file with the experiment ID you created. The `.env` file will be automatically loaded when starting the server.
+   Make a copy of `.env.example` to `.env`. It is automatically loaded when starting the server.
 
    ```bash
    cp .env.example .env
-   # Edit .env and fill in your experiment ID
    ```
 
-   See the [MLflow experiments documentation](https://docs.databricks.com/aws/en/mlflow/experiments#create-experiment-from-the-workspace).
+   To enable Langfuse tracing, fill in `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and `LANGFUSE_HOST`. Tracing is gated on `LANGFUSE_HOST` — omit it and the agent runs untraced.
 
 4. **Test your agent locally**
 
@@ -133,38 +122,25 @@ This will start the agent server and the chat app at http://localhost:8000.
 
 See the [LangGraph documentation](https://docs.langchain.com/oss/python/langgraph/quickstart) for more information on how to edit your own agent.
 
-Required files for hosting with MLflow `AgentServer`:
+Key files:
 
 - `agent.py`: Contains your agent logic. Modify this file to create your custom agent. For example, you can [add agent tools](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool) to give your agent additional capabilities
-- `start_server.py`: Initializes and runs the MLflow `AgentServer` with agent_type="ResponsesAgent". You don't have to modify this file for most common use cases, but can add additional server routes (e.g. a `/metrics` endpoint) here
+- `routes.py`: FastAPI route handlers for `/v1/chat/completions`, `/invocations`, and `/health`
+- `start_server.py`: Builds the FastAPI app, mounts the routes, and adds the chat proxy middleware. You don't have to modify this file for most common use cases, but can add additional server routes (e.g. a `/metrics` endpoint) here
 
 **Common customization questions:**
 
 **Q: Can I add additional files or folders to my agent?**
-Yes. Add additional files or folders as needed. Ensure the script within `pyproject.toml` runs the correct script that starts the server and sets up MLflow tracing.
+Yes. Add additional files or folders as needed. Ensure the script within `pyproject.toml` runs the correct script that starts the server.
 
 **Q: How do I add dependencies to my agent?**
-Run `uv add <package_name>` (e.g., `uv add "mlflow-skinny[databricks]"`). See the [python pyproject.toml guide](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements).
+Run `uv add <package_name>`. See the [python pyproject.toml guide](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements).
 
 **Q: Can I add custom tracing beyond the built-in tracing?**
-Yes. This template uses MLflow's agent server, which comes with automatic tracing for agent logic decorated with `@invoke()` and `@stream()`. It also uses [MLflow autologging APIs](https://mlflow.org/docs/latest/genai/tracing/#one-line-auto-tracing-integrations) to capture traces from LLM invocations. However, you can add additional instrumentation to capture more granular trace information when your agent runs. See the [MLflow tracing documentation](https://docs.databricks.com/aws/en/mlflow3/genai/tracing/app-instrumentation/).
+Yes. Tracing is provided by Langfuse via a per-request `CallbackHandler` constructed in `routes.py`. You can add further instrumentation with the [Langfuse Python SDK](https://langfuse.com/docs/sdk/python).
 
 **Q: How can I extend this example with additional tools and capabilities?**
 This template can be extended by integrating additional MCP servers, Vector Search Indexes, UC Functions, and other Databricks tools. See the ["Agent Framework Tools Documentation"](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool).
-
-## Evaluating your agent
-
-Evaluate your agent by calling the invoke function you defined for the agent locally.
-
-- Update your `evaluate_agent.py` file with the preferred evaluation dataset and scorers.
-
-Run the evaluation using the evaluation script:
-
-```bash
-uv run agent-evaluate
-```
-
-After it completes, open the MLflow UI link for your experiment to inspect results.
 
 ## Deploying to Databricks Apps
 
@@ -192,7 +168,7 @@ Ensure you have the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tool
 
 3. **Deploy the bundle**
 
-   This uploads your code and configures resources (MLflow experiment, serving endpoints, etc.) defined in `databricks.yml`:
+   This uploads your code and configures the resources (secrets, serving endpoints, etc.) defined in `databricks.yml`:
 
    ```bash
    databricks bundle deploy
