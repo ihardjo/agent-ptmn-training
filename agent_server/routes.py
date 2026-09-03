@@ -82,7 +82,7 @@ async def chat_completions(request: ChatRequest, http_request: Request):
         agent.astream(
             input=messages,
             stream_mode=["updates", "messages"],
-            config=trace_config(),
+            config=trace_config(session_id),
         )
     )
 
@@ -131,7 +131,7 @@ async def invocations_compat(body: dict, http_request: Request):
         agent.astream(
             input=lg_messages,
             stream_mode=["updates", "messages"],
-            config=trace_config(),
+            config=trace_config(session_id),
         )
     )
 
