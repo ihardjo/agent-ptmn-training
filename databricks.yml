@@ -36,8 +36,8 @@ targets:
   dev:
     mode: development
     default: true
-    # workspace:
-    #   host: https://...
+    workspace:
+      host: https://dbc-93c4f1e3-5706.cloud.databricks.com
 
   prod:
     mode: production
