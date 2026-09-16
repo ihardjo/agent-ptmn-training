@@ -9,6 +9,17 @@ class ChatMessage(BaseModel):
     model_config = {"extra": "allow"}
 
 
+def conversation_turns(items: list[dict]) -> list["ChatMessage"]:
+    """The conversation turns out of a Responses API `input` list.
+
+    Clients replay the items we emitted — `reasoning`, `function_call`,
+    `function_call_output`, `mcp_approval_*` — and none of those carry a `role`.
+    LangGraph rebuilds its state from the turns alone, so they are skipped rather
+    than failing validation.
+    """
+    return [ChatMessage(**item) for item in items if "role" in item]
+
+
 class ChatRequest(BaseModel):
     model: str = "agent"
     messages: list[ChatMessage]

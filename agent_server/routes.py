@@ -11,8 +11,8 @@ from agent_server.models import (
     AssistantMessage,
     ChatCompletionChoice,
     ChatCompletionResponse,
-    ChatMessage,
     ChatRequest,
+    conversation_turns,
 )
 from agent_server.utils import (
     collect_message_parts,
@@ -48,7 +48,7 @@ def trace_config(session_id: str | None = None) -> dict:
     return config
 
 
-def agent_stream(agent: Any, messages: list[ChatMessage], session_id: str | None):
+def agent_stream(agent: Any, messages: list, session_id: str | None):
     """The agent's event stream for one request."""
     return agent.astream(
         input={"messages": [{"role": m.role, "content": normalize_content(m.content)} for m in messages]},
@@ -117,7 +117,7 @@ async def invocations_compat(body: dict, http_request: Request):
     """
     session_id = http_request.headers.get("X-Session-Id") or body.get("context", {}).get("conversation_id")
     agent = await init_agent()
-    stream = agent_stream(agent, [ChatMessage(**m) for m in body.get("input", [])], session_id)
+    stream = agent_stream(agent, conversation_turns(body.get("input", [])), session_id)
     item_id = new_completion_id()
 
     if body.get("stream", False):
