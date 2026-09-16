@@ -51,8 +51,8 @@ def _sse(payload: dict) -> str:
 def error_chunk(message: str) -> str:
     """Report a mid-stream failure, which otherwise just closes the connection.
 
-    Valid on both routes: the chat UI's provider renders it, and it is the shape
-    MLflow's own agent server uses.
+    One shape for both routes — the UI's provider renders it, and MLflow's own
+    agent server sends the same.
     """
     return _sse({"error": message})
 
@@ -61,24 +61,18 @@ def error_chunk(message: str) -> str:
 
 
 def _reasoning_text(block: dict) -> str:
-    """Thought text from a reasoning block.
-
-    LangChain's standard block holds it under `reasoning`; Databricks models like
-    gpt-oss arrive as the raw Responses item, carrying a `summary` list instead.
-    """
-    if isinstance(block.get("reasoning"), str):
-        return block["reasoning"]
-    return "".join(part.get("text", "") for part in block.get("summary") or [])
+    """Thought text: LangChain puts it under `reasoning`, Databricks in a `summary` list."""
+    return block.get("reasoning") or "".join(
+        part.get("text", "") for part in block.get("summary") or []
+    )
 
 
 def _serialized_blocks(content: str) -> list | None:
-    """Recover content blocks that databricks_langchain flattened into a string.
+    """Content blocks that databricks_langchain `json.dumps`-ed into a string, if any.
 
-    Its `_convert_dict_to_message_chunk` runs `json.dumps` over any non-string
-    `content` "to maintain compatibility with downstream consumers", so a reasoning
-    model's blocks reach us as JSON text and render as the answer — chain of thought
-    and all. Only a list of typed blocks is accepted, leaving prose that merely
-    opens with a bracket alone.
+    Its `_convert_dict_to_message_chunk` stringifies non-string `content`, so a
+    reasoning model's blocks arrive as JSON text. Demanding typed dicts keeps prose
+    that merely opens with a bracket out.
     """
     if not content.startswith("["):
         return None
@@ -94,16 +88,14 @@ def _serialized_blocks(content: str) -> list | None:
 
 
 def _content_parts(message: AIMessage) -> list[tuple[str, str]]:
-    """Split a message's content into (TEXT | REASONING, chunk) pairs.
+    """Split content into (TEXT | REASONING, chunk) pairs.
 
-    Reasoning models return `content` as a list of blocks that interleaves thought
-    with answer. Passing it through whole puts the raw list on the wire, where the
-    UI renders it as a JSON blob with the chain of thought inside.
+    Reasoning models interleave thought with answer across a list of blocks;
+    passing that through whole is what puts a JSON blob on screen.
     """
     content = message.content
     if isinstance(content, str):
-        blocks = _serialized_blocks(content)
-        if blocks is None:
+        if not (blocks := _serialized_blocks(content)):
             return [(TEXT, content)] if content else []
         content = blocks
     parts = []
@@ -120,12 +112,11 @@ def _content_parts(message: AIMessage) -> list[tuple[str, str]]:
 async def _iter_message_parts(async_stream: AsyncIterator[Any]) -> AsyncGenerator[tuple[str, Any], None]:
     """Yield (kind, payload) for everything the UI can render, in arrival order.
 
-    Both stream modes earn their place. `messages` streams content token by token,
-    so text and reasoning come from there. `updates` fires once per node with the
-    finished message, so tool calls come from there — on `messages` their arguments
-    arrive as partial JSON fragments, unusable until reassembled.
+    Both stream modes earn their place: `messages` streams content token by token,
+    while `updates` carries whole messages, and only there do a tool call's
+    arguments arrive as parsed args rather than partial JSON fragments.
 
-    Payload is a str for TEXT and REASONING, a message for TOOL_RESULT, and a
+    Payload is a str for TEXT/REASONING, a ToolMessage for TOOL_RESULT, and a
     LangChain tool call for TOOL_CALL.
     """
     async for mode, payload in async_stream:
@@ -160,11 +151,7 @@ def _item_done(item: dict) -> dict:
 
 
 def _run_item_id(item_id: str, kind: str, run: int) -> str:
-    """Id for one uninterrupted run of text or reasoning.
-
-    The provider starts a new part whenever the id changes, which is what keeps a
-    thought from before a tool call separate from the one after it.
-    """
+    """Id per uninterrupted run — the provider splits parts when the id changes."""
     return f"{item_id}-{kind}-{run}"
 
 
@@ -174,18 +161,16 @@ async def _iter_responses_api_events(
 ) -> AsyncGenerator[dict, None]:
     """Convert LangGraph output to Responses API events, in arrival order.
 
-    One event type per renderable thing: thoughts stream on
-    `response.reasoning_summary_text.delta` (the UI's collapsible "Thinking..."
-    block), the answer on `response.output_text.delta`, and tool calls and results
-    as `function_call` / `function_call_output` items (the tool cards). Each run
-    also closes with an `output_item.done`, which the provider de-duplicates
-    against the deltas and which is all `collect_response_output` needs.
+    One event type per renderable thing: thoughts on
+    `response.reasoning_summary_text.delta` (the UI's "Thinking..." block), the
+    answer on `response.output_text.delta`, tool calls and results as
+    `function_call` / `function_call_output` items (the tool cards). Runs also
+    close with an `output_item.done`, de-duplicated by the provider and all
+    `collect_response_output` needs.
 
-    No `responses.completed` is sent. It is the only carrier for token usage, but
-    it also sets the finish reason, and the provider maps a completed response
-    holding tool calls to `tool-calls` — claiming the client still owes tool
-    results. This agent finished its own loop, so `stop` is the truthful answer and
-    the token counts are the price.
+    No `responses.completed`: it carries token usage but also sets the finish
+    reason, and the provider reads a completed response holding tool calls as
+    `tool-calls` — claiming the client owes results for a loop already finished.
     """
     run = 0
     open_kind: str | None = None
@@ -213,39 +198,36 @@ async def _iter_responses_api_events(
                 open_kind = kind
             buffered.append(payload)
             run_id = _run_item_id(item_id, kind, run)
-            yield (
-                create_text_delta(payload, item_id=run_id)
-                if kind == TEXT
-                # MLflow has no factory for a reasoning delta. Without it a thought
-                # only appears once its turn is over, instead of streaming in.
-                else {
+            if kind == TEXT:
+                yield create_text_delta(payload, item_id=run_id)
+            else:
+                # MLflow has no reasoning-delta factory, and without one a thought
+                # only lands once its turn is over instead of streaming in.
+                yield {
                     "type": "response.reasoning_summary_text.delta",
                     "item_id": run_id,
                     "summary_index": 0,
                     "delta": payload,
                 }
-            )
             continue
 
         if done := close_run():
             yield done
         open_kind = None
-        yield _item_done(
-            create_function_call_item(
-                # The provider learns a call's name only from this item, so it has
-                # to precede the output or the card reads "unknown" and the provider
-                # raises on a result it cannot pair. `arguments` is a JSON string.
+        if kind == TOOL_CALL:
+            # The provider learns a call's name only here, so this has to precede
+            # its output. `arguments` is a JSON string, not an object.
+            item = create_function_call_item(
                 id=f"fc-{payload['id']}",
                 call_id=payload["id"],
                 name=payload["name"],
                 arguments=json.dumps(payload["args"]),
             )
-            if kind == TOOL_CALL
-            else create_function_call_output_item(
-                call_id=payload.tool_call_id,
-                output=normalize_content(payload.content),
+        else:
+            item = create_function_call_output_item(
+                call_id=payload.tool_call_id, output=normalize_content(payload.content)
             )
-        )
+        yield _item_done(item)
 
     if done := close_run():
         yield done
@@ -263,7 +245,7 @@ async def stream_to_responses_api_chunks(
 async def collect_response_output(async_stream: AsyncIterator[Any], item_id: str) -> list[dict]:
     """The `output` list for a non-streaming response.
 
-    Built from the completed items of the streaming path so the two cannot drift.
+    Taken from the streaming path's completed items so the two cannot drift.
     """
     return [
         event["item"]
@@ -291,9 +273,8 @@ async def stream_to_chat_completions_chunks(
 ) -> AsyncGenerator[str, None]:
     """Emit Chat Completions SSE chunks.
 
-    Tool activity is dropped rather than mapped: `delta.tool_calls` asks the client
-    to run the tools and call back, which is wrong for an agent that runs its own
-    loop. Callers that want the tool steps use /invocations.
+    Tool activity is dropped, not mapped: `delta.tool_calls` asks the client to run
+    tools this agent already ran. Callers wanting the steps use /invocations.
     """
     yield _chat_chunk(completion_id, model, {"role": "assistant", "content": ""})
     async for kind, payload in _iter_message_parts(async_stream):
