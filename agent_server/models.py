@@ -22,6 +22,8 @@ class ChatRequest(BaseModel):
 class AssistantMessage(BaseModel):
     role: str
     content: str | None = None
+    # Mirrors the streaming path's `reasoning_content` delta key.
+    reasoning_content: str | None = None
 
 
 class ChatCompletionChoice(BaseModel):
