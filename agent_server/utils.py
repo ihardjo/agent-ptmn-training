@@ -71,6 +71,28 @@ def _reasoning_text(block: dict) -> str:
     return "".join(part.get("text", "") for part in block.get("summary") or [])
 
 
+def _serialized_blocks(content: str) -> list | None:
+    """Recover content blocks that databricks_langchain flattened into a string.
+
+    Its `_convert_dict_to_message_chunk` runs `json.dumps` over any non-string
+    `content` "to maintain compatibility with downstream consumers", so a reasoning
+    model's blocks reach us as JSON text and render as the answer — chain of thought
+    and all. Only a list of typed blocks is accepted, leaving prose that merely
+    opens with a bracket alone.
+    """
+    if not content.startswith("["):
+        return None
+    try:
+        blocks = json.loads(content)
+    except ValueError:
+        return None
+    if isinstance(blocks, list) and blocks and all(
+        isinstance(block, dict) and "type" in block for block in blocks
+    ):
+        return blocks
+    return None
+
+
 def _content_parts(message: AIMessage) -> list[tuple[str, str]]:
     """Split a message's content into (TEXT | REASONING, chunk) pairs.
 
@@ -78,10 +100,14 @@ def _content_parts(message: AIMessage) -> list[tuple[str, str]]:
     with answer. Passing it through whole puts the raw list on the wire, where the
     UI renders it as a JSON blob with the chain of thought inside.
     """
-    if isinstance(message.content, str):
-        return [(TEXT, message.content)] if message.content else []
+    content = message.content
+    if isinstance(content, str):
+        blocks = _serialized_blocks(content)
+        if blocks is None:
+            return [(TEXT, content)] if content else []
+        content = blocks
     parts = []
-    for block in message.content:
+    for block in content:
         if not isinstance(block, dict):
             continue
         if block.get("type") == TEXT and (text := block.get("text")):
