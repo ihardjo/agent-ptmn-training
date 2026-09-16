@@ -11,6 +11,9 @@ dependencies = [
     "fastapi>=0.129.0",
     "uvicorn>=0.41.0",
     "databricks-langchain>=0.17.0",
+    # Already pulled in by databricks-langchain; declared because agent_server
+    # imports mlflow.types.responses directly for the Responses API item shapes.
+    "mlflow>=3.0.0",
     "langgraph>=1.1.0",
     "langchain-mcp-adapters>=0.2.1",
     "python-dotenv>=1.2.1",
