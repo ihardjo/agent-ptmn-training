@@ -15,3 +15,10 @@ env:
     valueFrom: "langfuse-secret"
   - name: LANGFUSE_HOST
     value: "https://agentmonitoring.pertamina.ai"
+  # Jakarta workspace — managed SQL MCP over workshop_ai_platform.example
+  - name: DATABRICKS_JAKARTA_HOST
+    value: "https://dbc-86b2f2e8-b955.cloud.databricks.com"
+  - name: DATABRICKS_JAKARTA_CLIENT_ID
+    valueFrom: "databricks-jakarta-id"
+  - name: DATABRICKS_JAKARTA_CLIENT_SECRET
+    valueFrom: "databricks-jakarta-secret"

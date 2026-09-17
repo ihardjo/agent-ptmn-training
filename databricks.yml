@@ -23,6 +23,13 @@ resources:
             value_from: "langfuse-secret"
           - name: LANGFUSE_HOST
             value: "https://agentmonitoring.pertamina.ai"
+          # Jakarta workspace — managed SQL MCP over workshop_ai_platform.example
+          - name: DATABRICKS_JAKARTA_HOST
+            value: "https://dbc-86b2f2e8-b955.cloud.databricks.com"
+          - name: DATABRICKS_JAKARTA_CLIENT_ID
+            value_from: "databricks-jakarta-id"
+          - name: DATABRICKS_JAKARTA_CLIENT_SECRET
+            value_from: "databricks-jakarta-secret"
 
       # Resources which this app has access to
       resources:
@@ -30,6 +37,16 @@ resources:
           secret:
             scope: agent-ptmn-training
             key: langfuse-secret-key
+            permission: 'READ'
+        - name: 'databricks-jakarta-id'
+          secret:
+            scope: agent-ptmn-training
+            key: databricks-jakarta-id
+            permission: 'READ'
+        - name: 'databricks-jakarta-secret'
+          secret:
+            scope: agent-ptmn-training
+            key: databricks-jakarta-secret
             permission: 'READ'
 
 targets:

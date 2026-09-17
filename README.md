@@ -2,7 +2,7 @@
 
 This template defines a conversational agent app. The app comes with a built-in chat UI, but also exposes an API endpoint for invoking the agent so that you can serve your UI elsewhere (e.g. on your website or in a mobile app).
 
-The agent implements the [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat) interface, served by a plain FastAPI app. It ships with a sample `get_current_time` tool. The agent code includes commented-out examples showing how to connect to [Databricks MCP servers](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool) (including the built-in code interpreter, Vector Search, Genie, and UC functions). You can customize agent code and test it via the API or UI.
+The agent implements the [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat) interface, served by a plain FastAPI app. Its tools come entirely from [Databricks MCP servers](https://docs.databricks.com/aws/en/generative-ai/agent-framework/agent-tool): the `system.ai` functions (including the built-in code interpreter) from this workspace, and the managed SQL server on the Jakarta workspace for Unity Catalog access. You can customize agent code and test it via the API or UI.
 
 Endpoints: `POST /v1/chat/completions` (primary), `POST /invocations` (compatibility shim), `GET /health`. Both POST routes support streaming via `"stream": true`. Tracing is handled by [Langfuse](https://langfuse.com) and is optional — the agent starts and serves normally without it.
 
