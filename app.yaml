@@ -10,8 +10,15 @@ env:
     value: "300"
   # Langfuse observability (optional — agent starts without these)
   - name: LANGFUSE_PUBLIC_KEY
-    value: "pk-lf-85db9caf-990d-44f1-9e5e-a207ecb355bd"
+    value: "pk-lf-091592b0-696e-4037-bd8b-8ebba8ed862e"
   - name: LANGFUSE_SECRET_KEY
     valueFrom: "langfuse-secret"
   - name: LANGFUSE_HOST
     value: "https://agentmonitoring.pertamina.ai"
+  # Jakarta workspace — managed SQL MCP over workshop_ai_platform.example
+  - name: DATABRICKS_JAKARTA_HOST
+    value: "https://dbc-86b2f2e8-b955.cloud.databricks.com"
+  - name: DATABRICKS_JAKARTA_CLIENT_ID
+    valueFrom: "databricks-jakarta-id"
+  - name: DATABRICKS_JAKARTA_CLIENT_SECRET
+    valueFrom: "databricks-jakarta-secret"
