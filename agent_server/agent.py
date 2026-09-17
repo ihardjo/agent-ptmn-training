@@ -3,11 +3,10 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
-from databricks.sdk import WorkspaceClient
 from databricks_langchain import ChatDatabricks
 from langchain.agents import create_agent
 
-from agent_server.tools import init_mcp_client, sp_workspace_client
+from agent_server.tools import init_mcp_client
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +19,7 @@ _mcp_tools: Optional[list[Any]] = None
 _mcp_tools_lock = asyncio.Lock()
 
 
-async def mcp_tools(workspace_client: WorkspaceClient) -> list[Any]:
+async def mcp_tools() -> list[Any]:
     """MCP tools, discovered once per process.
 
     Both routes call `init_agent()` per request, and discovery is an
@@ -34,11 +33,14 @@ async def mcp_tools(workspace_client: WorkspaceClient) -> list[Any]:
         return _mcp_tools
     async with _mcp_tools_lock:
         if _mcp_tools is None:
+            client = init_mcp_client()
+            if client is None:
+                return []
             try:
-                tools = await init_mcp_client(workspace_client).get_tools()
+                tools = await client.get_tools()
             except Exception:
                 logger.warning(
-                    "Failed to fetch MCP tools (system-ai and/or jakarta-sql). "
+                    "Failed to fetch MCP tools from jakarta-sql. "
                     "Continuing without them.",
                     exc_info=True,
                 )
@@ -48,9 +50,9 @@ async def mcp_tools(workspace_client: WorkspaceClient) -> list[Any]:
     return _mcp_tools
 
 
-async def init_agent(workspace_client: Optional[WorkspaceClient] = None):
+async def init_agent():
     return create_agent(
-        tools=await mcp_tools(workspace_client or sp_workspace_client),
+        tools=await mcp_tools(),
         model=ChatDatabricks(endpoint="databricks-gpt-oss-120b"),
         system_prompt=SYSTEM_PROMPT,
     )
