@@ -5,20 +5,15 @@ from typing import Optional
 from databricks.sdk import WorkspaceClient
 from databricks_langchain import DatabricksMCPServer, DatabricksMultiServerMCPClient
 
-from agent_server.utils import get_databricks_host_from_env
-
 logger = logging.getLogger(__name__)
-
-sp_workspace_client = WorkspaceClient()
 
 
 def jakarta_workspace_client() -> Optional[WorkspaceClient]:
     """A client for the Jakarta workspace, or None when it is not configured.
 
-    The host is explicit rather than derived: `get_databricks_host_from_env()`
-    reads the ambient environment, which in the deployed app is Singapore. The
-    data lives in a different workspace and metastore, so the two must not
-    collapse onto one host if that environment shifts.
+    The host is explicit rather than derived. The ambient Databricks
+    environment belongs to the workspace this app runs in, which is not the
+    one holding the data.
     """
     host = os.environ.get("DATABRICKS_JAKARTA_HOST")
     client_id = os.environ.get("DATABRICKS_JAKARTA_CLIENT_ID")
@@ -37,21 +32,19 @@ def jakarta_workspace_client() -> Optional[WorkspaceClient]:
     )
 
 
-def init_mcp_client(workspace_client: WorkspaceClient) -> DatabricksMultiServerMCPClient:
-    host_name = get_databricks_host_from_env()
-    servers = [
-        DatabricksMCPServer(
-            name="system-ai",
-            url=f"{host_name}/api/2.0/mcp/functions/system/ai",
-            workspace_client=workspace_client,
-        ),
-    ]
+def init_mcp_client() -> Optional[DatabricksMultiServerMCPClient]:
+    """The Jakarta managed SQL MCP server, or None when it is not configured.
 
-    # Unity Catalog tables in the Jakarta workspace, via its managed SQL MCP
-    # server. Skipped rather than fatal when unconfigured, so the agent still
-    # serves its other tools.
-    if (jakarta := jakarta_workspace_client()) is not None:
-        servers.append(
+    SQL is the only server: `system.ai` functions are Unity Catalog UDFs, so
+    the model reaches them through `execute_sql` rather than spending tool
+    definitions on them.
+    """
+    jakarta = jakarta_workspace_client()
+    if jakarta is None:
+        logger.info("DATABRICKS_JAKARTA_* not configured — the agent will have no tools.")
+        return None
+    return DatabricksMultiServerMCPClient(
+        [
             DatabricksMCPServer(
                 name="jakarta-sql",
                 url=f"{os.environ['DATABRICKS_JAKARTA_HOST']}/api/2.0/mcp/sql",
@@ -60,9 +53,6 @@ def init_mcp_client(workspace_client: WorkspaceClient) -> DatabricksMultiServerM
                 # payload carries the error, so this only covers transport
                 # faults — leaving those to the model beats ending the turn.
                 handle_tool_error=True,
-            )
-        )
-    else:
-        logger.info("DATABRICKS_JAKARTA_* not configured — remote SQL tools are unavailable.")
-
-    return DatabricksMultiServerMCPClient(servers)
+            ),
+        ]
+    )

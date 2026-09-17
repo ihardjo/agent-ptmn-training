@@ -3,7 +3,6 @@ import logging
 import uuid
 from typing import Any, AsyncGenerator, AsyncIterator
 
-from databricks.sdk import WorkspaceClient
 from langchain.messages import AIMessage, ToolMessage
 from mlflow.types.responses import (
     ResponseOutputItemDoneEvent,
@@ -20,14 +19,6 @@ TEXT = "text"
 REASONING = "reasoning"
 TOOL_CALL = "tool_call"
 TOOL_RESULT = "tool_result"
-
-
-def get_databricks_host_from_env() -> str | None:
-    try:
-        return WorkspaceClient().config.host
-    except Exception as e:
-        logger.exception(f"Error getting Databricks host from env: {e}")
-        return None
 
 
 def new_completion_id() -> str:
