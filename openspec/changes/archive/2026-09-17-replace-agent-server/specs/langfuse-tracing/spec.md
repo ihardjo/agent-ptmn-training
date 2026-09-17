@@ -1,21 +1,4 @@
-# Langfuse Tracing
-
-## Purpose
-
-Defines the observability requirements for exporting agent traces to Langfuse. Covers trace generation for every agent invocation, session context propagation, credential configuration, and ensuring existing MLflow serving infrastructure remains unaffected.
-
-## Requirements
-
-### Requirement: Agent requests are traced to Langfuse
-Every invocation of the agent (streaming or non-streaming) SHALL produce a trace in Langfuse containing all LangGraph node executions, LLM calls, tool calls, inputs, outputs, latencies, and token counts.
-
-#### Scenario: Successful streaming request produces a trace
-- **WHEN** a client sends a POST to `/invocations` with a user message
-- **THEN** a trace SHALL appear in Langfuse within the configured flush interval, containing at least one LLM span with prompt and completion content
-
-#### Scenario: Tool call is captured in trace
-- **WHEN** the agent invokes a tool (e.g., `get_current_time`) during a request
-- **THEN** the Langfuse trace SHALL contain a span for that tool call with its input arguments and output
+## MODIFIED Requirements
 
 ### Requirement: Session context is propagated to traces
 Each trace SHALL carry a `session_id` when the request supplies one, enabling multi-turn conversations to be grouped in the Langfuse session view. The `X-Session-Id` request header is the primary source. On the `/invocations` route, `context.conversation_id` in the request body SHALL be used when the header is absent. When neither is present, the trace SHALL be created without a `session_id`.
@@ -31,17 +14,6 @@ Each trace SHALL carry a `session_id` when the request supplies one, enabling mu
 #### Scenario: Request without conversation_id produces a trace without session grouping
 - **WHEN** a request supplies neither an `X-Session-Id` header nor a `context.conversation_id`
 - **THEN** the Langfuse trace SHALL be created without a `session_id` (no error, no crash)
-
-### Requirement: Langfuse credentials are configurable via environment variables
-The system SHALL read Langfuse credentials (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`) and optionally a host (`LANGFUSE_HOST`) from environment variables, with no credentials hard-coded in source.
-
-#### Scenario: Self-hosted Langfuse instance is used
-- **WHEN** `LANGFUSE_HOST` is set to an internal URL
-- **THEN** all traces SHALL be sent to that host instead of Langfuse Cloud
-
-#### Scenario: Missing Langfuse credentials do not crash the agent
-- **WHEN** `LANGFUSE_PUBLIC_KEY` or `LANGFUSE_SECRET_KEY` are absent
-- **THEN** the agent SHALL start and serve requests; trace export SHALL fail silently with a logged warning (not an unhandled exception)
 
 ### Requirement: Existing MLflow serving infrastructure is unaffected
 The plain FastAPI serving layer SHALL NOT depend on `AgentServer`, `@invoke`/`@stream` decorators, or `ResponsesAgent` types. `MLFLOW_TRACKING_URI` and `MLFLOW_EXPERIMENT_ID` are no longer required for agent startup.
