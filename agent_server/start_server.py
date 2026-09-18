@@ -16,6 +16,15 @@ from agent_server.routes import router  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
+# uvicorn configures only its own loggers, leaving the root logger at WARNING —
+# so every `logger.info` in this application was silently dropped, including the
+# MCP tool discovery line that has been there since the beginning. Requirements
+# that say something is "recorded in the application log" need this to be set.
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(levelname)s %(name)s: %(message)s",
+)
+
 # ── Chat proxy middleware ──────────────────────────────────────────────────────
 # Proxies frontend paths to the Next.js app on CHAT_APP_PORT.
 
