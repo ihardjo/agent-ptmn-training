@@ -8,18 +8,30 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.129.0",
-    "uvicorn>=0.41.0",
-    "databricks-langchain>=0.17.0",
+    "fastapi>=0.141.1",
+    "uvicorn>=0.52.4",
+    "starlette>=0.41.0",   # BaseHTTPMiddleware, imported directly by start_server
+    "pydantic>=2.11",      # request/response models
+    # Floor raised to the version whose reasoning-block serialization
+    # agent_server/utils.py parses. Below this the streaming translation of
+    # thoughts is not guaranteed to match what it expects.
+    "databricks-langchain>=0.20.0",
+    # Imported directly (databricks.sdk.WorkspaceClient), not merely pulled in
+    # by databricks-langchain — declared so a change there cannot remove it.
+    "databricks-sdk>=0.139.0",
+    # Also only transitive before now: utils.py imports langchain.messages and
+    # agent.py imports langchain.agents.middleware for the planning middleware.
+    "langchain>=1.4.1",
     # Already pulled in by databricks-langchain; declared because agent_server
     # imports mlflow.types.responses directly for the Responses API item shapes.
-    "mlflow>=3.0.0",
-    "langgraph>=1.1.0",
+    "mlflow>=3.16.1",
+    "langgraph>=1.2.11",
     "langchain-mcp-adapters>=0.2.1",
     "python-dotenv>=1.2.1",
     "opentelemetry-exporter-otlp-proto-grpc>=1.25.0",
-    "langfuse>=4.0.0",
+    "langfuse>=4.15.4",
     "httpx>=0.27.0",
+    "deepagents>=0.7.15",
 ]
 
 [build-system]
@@ -46,3 +58,4 @@ start-app = "scripts.start_app:main"
 start-server = "agent_server.start_server:main"
 discover-tools = "scripts.discover_tools:main"
 preflight = "scripts.preflight:main"
+agent-evaluate = "agent_evaluation.runner:main"
