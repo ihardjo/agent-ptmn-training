@@ -1,3 +1,4 @@
+import argparse
 import logging
 import os
 from pathlib import Path
@@ -78,10 +79,23 @@ app.add_middleware(ChatProxyMiddleware)
 
 
 def main():
+    # `--port` is honoured because `scripts/preflight.py` starts this server on
+    # a free port and then health-checks that port. Hard-coding 8000 made the
+    # argument silently ignored, so preflight always probed a port nothing was
+    # listening on and reported a connection refused as a failed health check.
+    # The default stays 8000: that is the port Databricks Apps expects.
+    parser = argparse.ArgumentParser(description="Run the agent server.")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("PORT", 8000)),
+        help="port to listen on (default: $PORT or 8000)",
+    )
+    args = parser.parse_args()
     uvicorn.run(
         "agent_server.start_server:app",
         host="0.0.0.0",
-        port=8000,
+        port=args.port,
         workers=1,
         reload=False,
     )
