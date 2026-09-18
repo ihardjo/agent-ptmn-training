@@ -98,7 +98,7 @@ When the user asks about evaluating their agent (quality, metrics, scorers, data
 npx skills add mlflow/skills
 ```
 
-After installation, the skills will be available as slash commands (e.g., `/agent-evaluation`). This template also includes a built-in `evaluate_agent.py` script — run it with `uv run agent-evaluate` after starting the local server.
+After installation, the skills will be available as slash commands (e.g., `/agent-evaluation`). This repository has its own evaluation harness: `uv run agent-evaluate` scores the agent against the Langfuse `sdlc-agent-eval-v1` dataset. It drives the agent in process, so no local server needs to be running.
 
 ---
 
@@ -145,7 +145,7 @@ After installation, the skills will be available as slash commands (e.g., `/agen
 |------|---------|
 | `agent_server/agent.py` | Agent logic, model, instructions, MCP servers |
 | `agent_server/start_server.py` | FastAPI server + MLflow setup |
-| `agent_server/evaluate_agent.py` | Agent evaluation with MLflow scorers |
+| `agent_evaluation/` | Agent evaluation: dataset, scorers, and runner for the Langfuse `sdlc-agent-eval-v1` dataset |
 | `databricks.yml` | Bundle config & resource permissions |
 | `.github/workflows/deploy.yml` | GitHub Actions workflow to deploy this app (synced from `.scripts/source/.github/workflows/`) |
 | `scripts/quickstart.py` | One-command setup script |
