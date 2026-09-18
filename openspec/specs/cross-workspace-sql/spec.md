@@ -11,7 +11,7 @@ The agent SHALL expose the managed SQL MCP server hosted by the remote Databrick
 
 #### Scenario: Reading a table the agent has no local copy of
 
-- **WHEN** a user asks the agent a question answerable from `workshop_ai_platform.example.data_tiket_it`
+- **WHEN** a user asks the agent a question answerable from `workshop_ai_platform.example.sdlc_tickets`
 - **THEN** the agent issues SQL against the remote workspace's SQL MCP server
 - **AND** the SQL executes on remote-region compute
 - **AND** the agent answers from the returned rows
@@ -84,13 +84,25 @@ Because the SQL MCP server is workspace-scoped and accepts arbitrary statements,
 
 ### Requirement: Generated SQL is valid against the remote catalog
 
-The agent SHALL be instructed such that the SQL it generates resolves correctly in the remote catalog, including fully qualified three-level names and escaping for identifiers that are not bare words.
+The agent SHALL be instructed such that the SQL it generates resolves correctly in the remote catalog, including fully qualified three-level names and escaping for identifiers that are not bare words. Because only a minority of the target table's columns require escaping, the agent SHALL determine which identifiers need it from the schema rather than escaping every identifier by default or assuming none needs it.
 
 #### Scenario: Columns whose names contain spaces or punctuation
 
-- **WHEN** the agent queries a table whose column names contain spaces or parentheses
-- **THEN** the generated SQL SHALL escape those identifiers
+- **WHEN** the agent queries a column whose name contains a space, parentheses, or a slash
+- **THEN** the generated SQL SHALL escape that identifier
 - **AND** the statement SHALL succeed rather than failing to parse
+
+#### Scenario: Columns that need no escaping
+
+- **WHEN** the agent queries a column whose name is a bare word
+- **THEN** the statement SHALL succeed whether or not that identifier is escaped
+- **AND** the agent SHALL NOT report the column as unavailable on the grounds of its name
+
+#### Scenario: A table mixing both kinds of identifier
+
+- **WHEN** a single statement references both a bare-word column and a column requiring escaping
+- **THEN** the agent SHALL escape only what requires it
+- **AND** the statement SHALL parse and execute
 
 #### Scenario: An unqualified table reference
 
