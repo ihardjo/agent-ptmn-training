@@ -32,6 +32,10 @@ dependencies = [
     "langfuse>=4.15.4",
     "httpx>=0.27.0",
     "deepagents>=0.7.15",
+    # Transitive until now (via mlflow). Declared because agent_server/okf.py
+    # parses OKF frontmatter with it, and a document whose frontmatter cannot be
+    # read is a conformance failure rather than a missing nicety.
+    "pyyaml>=6.0",
 ]
 
 [build-system]
@@ -59,3 +63,5 @@ start-server = "agent_server.start_server:main"
 discover-tools = "scripts.discover_tools:main"
 preflight = "scripts.preflight:main"
 agent-evaluate = "agent_evaluation.runner:main"
+seed-wiki = "scripts.seed_wiki:main"
+check-okf = "scripts.check_okf:main"

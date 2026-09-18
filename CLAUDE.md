@@ -25,6 +25,12 @@ uv run start-server
 # Explore available Databricks MCP tools
 uv run discover-tools
 
+# Upload the committed wiki bundle to the Volume (idempotent; never touches notes/)
+uv run seed-wiki
+
+# Check the seed and the live Volume against OKF v0.2 conformance
+uv run check-okf
+
 # Pre-deployment validation
 uv run preflight
 databricks bundle validate
@@ -61,13 +67,19 @@ agent_server/
   routes.py         ← FastAPI routes: /health, /v1/chat/completions, /invocations
   models.py         ← Pydantic request/response models
   tools.py          ← Tool definitions
+  backends.py       ← VolumeBackend: the /wiki/ tier over the UC Files API
+  okf.py            ← Open Knowledge Format parsing, conformance, conformant writes
+  privacy.py        ← The person-name set the write guard and the eval both use
   utils.py          ← Shared helpers (per-user workspace client, auth)
   start_server.py   ← FastAPI app + uvicorn entrypoint, chat proxy middleware
+wiki_seed/          ← Committed OKF bundle uploaded to the wiki Volume
 scripts/
   quickstart.py     ← First-run setup wizard
   start_app.py      ← Launches server + React chat UI
   preflight.py      ← Pre-deploy checks
   discover_tools.py ← Lists available MCP tools from Databricks
+  seed_wiki.py      ← Uploads wiki_seed/ to the Volume's openwiki/ tree
+  check_okf.py      ← Checks the seed and the Volume for OKF conformance
 app.yaml            ← Databricks Apps config — used by UI/Git deploys
 manifest.yaml       ← App metadata and resource specs
 databricks.yml      ← DAB (Databricks Asset Bundle) — used by the GitHub Actions deploy
@@ -91,9 +103,34 @@ pyproject.toml      ← Dependencies and uv script entry points
 - *App authorization (default)*: service principal, all users share permissions. Declare resources under `resources.apps.<app>.resources` in `databricks.yml`.
 - *User authorization*: per-user permissions; call `get_user_workspace_client()` with the incoming FastAPI `Request` and set `user_api_scopes` in `databricks.yml`.
 
+**Filesystem tiers** — the agent reads and writes through one `CompositeBackend`
+whose path prefix states a file's lifetime, who wrote it, and whether the agent
+may write there. Built in `agent_server/agent.py:build_backend()`:
+
+| Prefix | Lifetime | Written by | Agent may write |
+|---|---|---|---|
+| `/` | the thread | the agent | yes (scratch, discarded) |
+| `/skills/` | a merge | people, via the repo | no — deny rule |
+| `/wiki/openwiki/` | a sync | people, via OpenWiki | no — deny rule |
+| `/wiki/notes/` | durable | the agent | yes |
+
+Both `/wiki/` prefixes are subdirectories of **one** Unity Catalog Volume in the
+Jakarta workspace, reached over the Files API because Databricks Apps have no
+FUSE mount for Volumes. A volume grant is per-volume, not per-path, so
+read-only on `/wiki/openwiki/` is enforced by the `FilesystemPermission` deny
+rule in `filesystem_permissions()` and **not** by the grant — treat a gap there
+as a correctness bug. Note `/wiki/` itself is deliberately not a route: a loose
+`/wiki/x.md` falls through to scratch rather than quietly becoming durable.
+
+Each tier is an **OKF v0.2** bundle (markdown + YAML frontmatter). The notes
+write path supplies `type` and `generated` itself rather than asking the model
+for them, so the bundle stays conformant by construction.
+
 **Environment variables** (set in `app.yaml` for the deployed app, in `.env` for local):
 - `CHAT_APP_PORT` / `CHAT_PROXY_TIMEOUT_SECONDS` / `API_PROXY` — chat UI proxy wiring
 - `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_HOST` — tracing (optional)
+- `DATABRICKS_WIKI_VOLUME` — the wiki Volume path (optional; without it the
+  agent starts and serves normally, just with no `/wiki/` tier)
 
 **Compute constraint** — only `medium` and `large` compute sizes are supported for Databricks Apps.
 

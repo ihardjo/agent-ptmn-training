@@ -98,7 +98,13 @@ def check_health(base_url: str) -> bool:
         req = urllib.request.Request(f"{base_url}/health")
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read())
-            return data.get("status") == "healthy"
+            # `ok`, not `healthy`: the `chat-completions-serving` spec fixes
+            # `GET /health` as `{"status":"ok"}`, and that is what the route
+            # returns. This check asserted a value nothing ever produced.
+            if data.get("status") == "ok":
+                return True
+            print(f"  Unexpected health payload: {json.dumps(data)[:120]}")
+            return False
     except Exception as e:
         print(f"  Health check failed: {e}")
         return False

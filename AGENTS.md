@@ -134,6 +134,8 @@ After installation, the skills will be available as slash commands (e.g., `/agen
 | Setup | `uv run quickstart` |
 | Discover tools | `uv run discover-tools` |
 | Run locally | `uv run start-app` |
+| Seed the wiki Volume | `uv run seed-wiki` |
+| Check OKF conformance | `uv run check-okf` |
 | Deploy | `databricks bundle deploy && databricks bundle run agent_langgraph` |
 | View logs | `databricks apps logs <app-name> --follow` |
 
@@ -143,7 +145,10 @@ After installation, the skills will be available as slash commands (e.g., `/agen
 
 | File | Purpose |
 |------|---------|
-| `agent_server/agent.py` | Agent logic, model, instructions, MCP servers |
+| `agent_server/agent.py` | Agent logic, model, instructions, MCP servers, filesystem tiers |
+| `agent_server/backends.py` | `VolumeBackend` — the `/wiki/` tier over the UC Files API |
+| `agent_server/okf.py` | OKF v0.2 parsing, conformance, and conformant writes |
+| `wiki_seed/` | Committed OKF bundle, uploaded to the Volume by `seed-wiki` |
 | `agent_server/start_server.py` | FastAPI server + MLflow setup |
 | `agent_evaluation/` | Agent evaluation: dataset, scorers, and runner for the Langfuse `sdlc-agent-eval-v1` dataset |
 | `databricks.yml` | Bundle config & resource permissions |

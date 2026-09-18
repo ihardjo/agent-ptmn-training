@@ -24,6 +24,7 @@ import os
 import pathlib
 import re
 import time
+from typing import Any
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 EVAL_TABLE = "workshop_ai_platform.example.sdlc_tickets"
@@ -65,6 +66,41 @@ def _langfuse():
 # that does not.
 SQL_TOOLS = frozenset({"execute_sql", "execute_sql_read_only", "poll_sql_result"})
 
+# The filesystem tools, split by what they tell the evaluation. Reads say the
+# agent consulted the wiki rather than inventing a policy fact; writes to the
+# notes tier are durable output, and the privacy rule covers them as much as it
+# covers the answer.
+#
+# Note that these are deliberately *not* added to SQL_TOOLS. That set is an
+# allowlist, so a wiki read has never counted as a statement against the data —
+# which is what keeps the method and effort figures comparable with the v1
+# baseline instead of inflated by the agent's reading.
+WIKI_READ_TOOLS = frozenset({"read_file", "ls", "glob", "grep"})
+WIKI_WRITE_TOOLS = frozenset({"write_file", "edit_file"})
+WIKI_PREFIX = "/wiki/"
+WIKI_NOTES_PREFIX = "/wiki/notes/"
+
+
+def _tool_paths(args: dict) -> list[str]:
+    """Path-ish string arguments of a filesystem tool call."""
+    keys = ("file_path", "path", "pattern")
+    return [str(args[k]) for k in keys if isinstance(args.get(k), str)]
+
+
+# What a refused write looks like coming back. `Refused:` is the privacy guard
+# in `agent_server/backends.py`; `permission` covers the middleware deny rule.
+_REFUSAL_MARKERS = ("refused", "permission denied", "not permitted")
+
+
+def _write_refused(message: Any) -> bool:
+    """Whether a write tool's result reports that the write did not happen."""
+    if getattr(message, "status", None) == "error":
+        return True
+    content = getattr(message, "content", "")
+    text = content if isinstance(content, str) else str(content)
+    lowered = text.casefold()
+    return any(marker in lowered for marker in _REFUSAL_MARKERS)
+
 _MUTATING = re.compile(
     r"^\s*(insert|update|delete|merge|drop|truncate|alter|create|restore)\b",
     re.I)
@@ -101,9 +137,9 @@ def _databricks():
 async def _ask(question: str) -> dict:
     """Put one question to the agent, capturing the statements it issued.
 
-    Returns the answer text, the SQL it ran, and how long it took — everything
-    the evaluators need, none of it fetched back from a trace that may not have
-    been ingested yet.
+    Returns the answer text, the SQL it ran, which wiki paths it read, what it
+    wrote to its notes, and how long it took — everything the evaluators need,
+    none of it fetched back from a trace that may not have been ingested yet.
     """
     from langchain.messages import AIMessage
     from langfuse.langchain import CallbackHandler
@@ -119,6 +155,9 @@ async def _ask(question: str) -> dict:
 
     answer: list[str] = []
     statements: list[str] = []
+    wiki_reads: list[str] = []
+    wiki_writes: list[dict] = []
+    pending_writes: dict[str, dict] = {}
     started = time.monotonic()
 
     async for mode, payload in agent.astream(
@@ -137,10 +176,42 @@ async def _ask(question: str) -> dict:
                 if not isinstance(update, dict):
                     continue
                 for message in update.get("messages", []):
+                    # A write's outcome arrives as the tool's result, not with
+                    # the call. The privacy guard refuses in-process, so the
+                    # difference between "the agent tried to write a name" and
+                    # "a name reached the Volume" is only visible here.
+                    call_id = getattr(message, "tool_call_id", None)
+                    if call_id and call_id in pending_writes:
+                        pending_writes.pop(call_id)["refused"] = _write_refused(message)
                     for call in getattr(message, "tool_calls", None) or []:
-                        if call.get("name") not in SQL_TOOLS:
-                            continue  # planning, delegation, skill reads
+                        name = call.get("name")
                         args = call.get("args") or {}
+
+                        if name in WIKI_READ_TOOLS:
+                            wiki_reads.extend(
+                                p for p in _tool_paths(args) if p.startswith(WIKI_PREFIX)
+                            )
+                            continue
+                        if name in WIKI_WRITE_TOOLS:
+                            if any(p.startswith(WIKI_NOTES_PREFIX) for p in _tool_paths(args)):
+                                # `content` on a write, `new_string` on an edit.
+                                for key in ("content", "new_string"):
+                                    if isinstance(args.get(key), str):
+                                        attempt = {
+                                            "content": args[key],
+                                            # Resolved below from the tool's own
+                                            # result. Assume it landed until the
+                                            # result says otherwise: a refusal
+                                            # scored as a success would hide the
+                                            # exact failure this measures.
+                                            "refused": False,
+                                        }
+                                        wiki_writes.append(attempt)
+                                        if call.get("id"):
+                                            pending_writes[call["id"]] = attempt
+                            continue
+                        if name not in SQL_TOOLS:
+                            continue  # planning, delegation, skill reads
                         # The SQL MCP tools name their argument variously; take
                         # whichever string argument carries the statement.
                         for value in args.values():
@@ -151,6 +222,8 @@ async def _ask(question: str) -> dict:
         "answer": "".join(answer),
         "statements": statements,
         "mutated": [s for s in statements if _is_mutation(s)],
+        "wiki_reads": wiki_reads,
+        "wiki_writes": wiki_writes,
         "seconds": round(time.monotonic() - started, 2),
     }
 
@@ -168,7 +241,8 @@ async def task(*, item, **kwargs) -> dict:
         return await _ask(question)
     except Exception as exc:  # noqa: BLE001 - the cause is the thing we need
         print(f"  !! item {item.id} raised {type(exc).__name__}: {exc}"[:400])
-        return {"answer": "", "statements": [], "mutated": [], "seconds": 0.0,
+        return {"answer": "", "statements": [], "mutated": [],
+                "wiki_reads": [], "wiki_writes": [], "seconds": 0.0,
                 "error": f"{type(exc).__name__}: {exc}"}
 
 

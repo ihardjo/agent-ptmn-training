@@ -22,3 +22,6 @@ env:
     valueFrom: "databricks-jakarta-id"
   - name: DATABRICKS_JAKARTA_CLIENT_SECRET
     valueFrom: "databricks-jakarta-secret"
+  # Volume-backed wiki — OKF bundle on a Unity Catalog Volume in Jakarta
+  - name: DATABRICKS_WIKI_VOLUME
+    value: "/Volumes/workshop_ai_platform/example/agent_wiki"
