@@ -233,3 +233,7 @@ e2e-chatbot-app-next/
 # Process logs written by start-app
 backend.log
 frontend.log
+
+# Generated data exports. `scripts/generate_sdlc_tickets.py` reproduces these
+# byte-for-byte from a pinned seed, so committing them is redundant weight.
+data/
