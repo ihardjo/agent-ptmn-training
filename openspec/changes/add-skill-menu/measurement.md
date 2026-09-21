@@ -161,3 +161,29 @@ truth is **14.7 %**, and the baseline run produced 14.67 % . The difference is
 the scope and exclusion rules in `breach-counting.md` — which is exactly what
 the unread skill exists to carry. A concrete instance of a selection miss
 producing a plausible, slightly wrong figure that no reader could detect.
+
+### Endpoint instability observed post-deploy, unrelated to the menu
+
+Four attempts at *"Berapa velocity tim per sprint?"* against the deployed app:
+
+| Attempt | Result |
+|---|---|
+| 1 | connection dropped after 995 s |
+| 2 | 13 s, read the skill, ran correct SQL, then answered `"Video atau halaman yang Anda minta tidak dapat ditemukan"` |
+| 3 | 37 s, correct — median 188.5 points/sprint over 40 sprints, with the coverage column |
+| 4 | 15 s, correct — median 188 points/sprint over 40 sprints |
+
+Attempt 2 is worth reading carefully, because it **exonerates the skill**. The
+trace shows the agent selecting `measuring-sprint-velocity` by name in its
+reasoning, reading it, issuing SQL in exactly the corrected form the skill
+prescribes — `COUNT(CASE WHEN story_points IS NOT NULL THEN 1 END)`, not a
+`WHERE` filter — and receiving a SUCCEEDED result. Every step the skill governs
+was right. Only the final generation was degenerate, emitting a sentence from
+an unrelated corpus after the work was done.
+
+So this is serving-layer instability on `databricks-qwen35-122b-a10b`, not a
+property of the menu: roughly one attempt in four either hangs or degenerates,
+on a question where skill selection and SQL are correct every time. It matters
+for the workshop — a live demo has a real chance of showing a broken answer —
+and it belongs to the model endpoint rather than to this change. A simple count
+question returned correctly in 13 s throughout.
