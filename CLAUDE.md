@@ -31,6 +31,9 @@ uv run seed-wiki
 # Check the seed and the live Volume against OKF v0.2 conformance
 uv run check-okf
 
+# Check the skills tier against the Agent Skills authoring standard
+uv run check-skills
+
 # Pre-deployment validation
 uv run preflight
 databricks bundle validate
@@ -73,6 +76,10 @@ agent_server/
   utils.py          ← Shared helpers (per-user workspace client, auth)
   start_server.py   ← FastAPI app + uvicorn entrypoint, chat proxy middleware
 wiki_seed/          ← Committed OKF bundle uploaded to the wiki Volume
+skills/             ← The agent's skill menu, mounted read-only at /skills/
+  REGISTRY.md       ← Purpose, owner, version, dependencies, eval status per skill
+  SECURITY-REVIEW.md← The published review checklist, completed against every skill
+  <skill>/SKILL.md  ← One skill; only `name` + `description` reach the prompt
 scripts/
   quickstart.py     ← First-run setup wizard
   start_app.py      ← Launches server + React chat UI
@@ -80,6 +87,7 @@ scripts/
   discover_tools.py ← Lists available MCP tools from Databricks
   seed_wiki.py      ← Uploads wiki_seed/ to the Volume's openwiki/ tree
   check_okf.py      ← Checks the seed and the Volume for OKF conformance
+  check_skills.py   ← Checks the skills tier for authoring-standard conformance
 app.yaml            ← Databricks Apps config — used by UI/Git deploys
 manifest.yaml       ← App metadata and resource specs
 databricks.yml      ← DAB (Databricks Asset Bundle) — used by the GitHub Actions deploy
@@ -121,6 +129,15 @@ read-only on `/wiki/openwiki/` is enforced by the `FilesystemPermission` deny
 rule in `filesystem_permissions()` and **not** by the grant — treat a gap there
 as a correctness bug. Note `/wiki/` itself is deliberately not a route: a loose
 `/wiki/x.md` falls through to scratch rather than quietly becoming durable.
+
+**The skill menu** — `/skills/` holds ten skills: five carrying real procedures
+and five deliberately over-broad *distractors*, which compete for selection and
+then redirect or decline. A distractor competes through its **description**
+only; its body is correct, so a mis-selection costs a wasted read and never a
+wrong answer. Bodies that would contradict the system prompt's safety rules are
+prohibited — the enterprise standard rates that High risk. Skill reads are
+identified in a trace by the `/skills/` **path prefix**, not by tool name:
+`read_file` serves `/wiki/` too.
 
 Each tier is an **OKF v0.2** bundle (markdown + YAML frontmatter). The notes
 write path supplies `type` and `generated` itself rather than asking the model

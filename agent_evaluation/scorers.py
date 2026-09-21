@@ -90,6 +90,29 @@ def _wiki_reads(output: Any) -> list[str]:
     return []
 
 
+def _skill_reads(output: Any) -> list[str]:
+    """Skill paths the agent read, as `/skills/<name>/SKILL.md`."""
+    if isinstance(output, dict):
+        return [str(p) for p in output.get("skill_reads") or []]
+    return []
+
+
+def _skills_read(output: Any) -> set[str]:
+    """The skill *names* read, recovered from the second path segment.
+
+    The tier is identified by the path prefix, never by the tool name: the
+    same `read_file` serves `/wiki/` and `/skills/`, so a scorer keyed to the
+    tool would count every wiki read as a skill read -- inflating selection
+    cost on exactly the adherence questions where wiki reads are correct.
+    """
+    names = set()
+    for path in _skill_reads(output):
+        parts = [seg for seg in path.split("/") if seg]
+        if len(parts) >= 2 and parts[0] == "skills":
+            names.add(parts[1])
+    return names
+
+
 def _wiki_writes(output: Any) -> list[dict]:
     """Write attempts against the notes tier, each with its outcome.
 
@@ -479,6 +502,45 @@ def tool_efficiency(*, item_results, **kwargs):
                 f"{seconds:.0f}s total, {seconds / items:.1f}s per item")
 
 
+def skill_selection(*, input, output, expected_output, metadata=None, **kwargs):
+    """Did the agent read the skills that applied, and only those?
+
+    Scored apart from answer quality on purpose. A correct answer reached
+    after reading three skills that did not apply is a real failure and no
+    answer-based measure detects it; conversely a wasted read must not be
+    allowed to fail an item whose figure is right.
+
+    `expected_skills` is the set that should be read -- empty means the
+    correct behaviour is to read nothing. `tolerated_skills` are neither
+    required nor penalised, used where a description is a genuinely
+    reasonable match and recovery rather than first choice is the subject.
+    """
+    expected = set(expected_output.get("expected_skills") or [])
+    tolerated = set(expected_output.get("tolerated_skills") or [])
+    read = _skills_read(output)
+
+    missing = expected - read
+    extra = read - expected - tolerated
+
+    if not missing and not extra:
+        detail = ", ".join(sorted(read)) or "nothing, correctly"
+        return Evaluation(
+            name="skill_selection", value=1.0, comment=f"read {detail}"
+        )
+
+    parts = []
+    if missing:
+        parts.append(f"did not read {', '.join(sorted(missing))}")
+    if extra:
+        parts.append(f"read {', '.join(sorted(extra))} which did not apply")
+
+    # Both directions are failures, and they are not equally bad. Missing a
+    # skill that applied means the procedure was not followed at all; reading
+    # a surplus one costs turns but the agent may still have recovered.
+    value = 0.0 if missing else 0.5
+    return Evaluation(name="skill_selection", value=value, comment="; ".join(parts))
+
+
 ITEM_EVALUATORS = [
     numeric_accuracy,
     no_pii_leak,
@@ -488,5 +550,6 @@ ITEM_EVALUATORS = [
     declined_correctly,
     caveat_present,
     wiki_was_read,
+    skill_selection,
 ]
 RUN_EVALUATORS = [tool_efficiency]

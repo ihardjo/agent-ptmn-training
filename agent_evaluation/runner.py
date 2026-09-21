@@ -75,10 +75,16 @@ SQL_TOOLS = frozenset({"execute_sql", "execute_sql_read_only", "poll_sql_result"
 # allowlist, so a wiki read has never counted as a statement against the data —
 # which is what keeps the method and effort figures comparable with the v1
 # baseline instead of inflated by the agent's reading.
-WIKI_READ_TOOLS = frozenset({"read_file", "ls", "glob", "grep"})
+# One tool set, two tiers. `read_file` serves `/wiki/` and `/skills/` alike, so
+# the tier is determined by the **path prefix** and never by the tool name —
+# naming this set after the wiki is what previously let skill reads fall
+# through the wiki branch and vanish.
+FS_READ_TOOLS = frozenset({"read_file", "ls", "glob", "grep"})
+WIKI_READ_TOOLS = FS_READ_TOOLS  # retained: the wiki tests import this name
 WIKI_WRITE_TOOLS = frozenset({"write_file", "edit_file"})
 WIKI_PREFIX = "/wiki/"
 WIKI_NOTES_PREFIX = "/wiki/notes/"
+SKILLS_PREFIX = "/skills/"
 
 
 def _tool_paths(args: dict) -> list[str]:
@@ -156,6 +162,7 @@ async def _ask(question: str) -> dict:
     answer: list[str] = []
     statements: list[str] = []
     wiki_reads: list[str] = []
+    skill_reads: list[str] = []
     wiki_writes: list[dict] = []
     pending_writes: dict[str, dict] = {}
     started = time.monotonic()
@@ -187,9 +194,13 @@ async def _ask(question: str) -> dict:
                         name = call.get("name")
                         args = call.get("args") or {}
 
-                        if name in WIKI_READ_TOOLS:
+                        if name in FS_READ_TOOLS:
+                            paths = _tool_paths(args)
                             wiki_reads.extend(
-                                p for p in _tool_paths(args) if p.startswith(WIKI_PREFIX)
+                                p for p in paths if p.startswith(WIKI_PREFIX)
+                            )
+                            skill_reads.extend(
+                                p for p in paths if p.startswith(SKILLS_PREFIX)
                             )
                             continue
                         if name in WIKI_WRITE_TOOLS:
@@ -223,6 +234,7 @@ async def _ask(question: str) -> dict:
         "statements": statements,
         "mutated": [s for s in statements if _is_mutation(s)],
         "wiki_reads": wiki_reads,
+        "skill_reads": skill_reads,
         "wiki_writes": wiki_writes,
         "seconds": round(time.monotonic() - started, 2),
     }
@@ -242,7 +254,7 @@ async def task(*, item, **kwargs) -> dict:
     except Exception as exc:  # noqa: BLE001 - the cause is the thing we need
         print(f"  !! item {item.id} raised {type(exc).__name__}: {exc}"[:400])
         return {"answer": "", "statements": [], "mutated": [],
-                "wiki_reads": [], "wiki_writes": [], "seconds": 0.0,
+                "wiki_reads": [], "skill_reads": [], "wiki_writes": [], "seconds": 0.0,
                 "error": f"{type(exc).__name__}: {exc}"}
 
 
