@@ -204,6 +204,46 @@ def test_guard_is_off_on_the_source_tier(client, source, notes):
     assert source._forbid_person_names is False
 
 
+# ── the address form is an identity too ──────────────────────────────────────
+#
+# The table records people as addresses, so this is the form the agent actually
+# reads out of a query result — and the form a name-only vocabulary let through.
+
+
+def test_guard_refuses_an_address(client, notes):
+    r = notes.write("/finding.md", "budi.santoso@pertamina.com closed 701 tickets.")
+    assert r.error is not None and "rank" in r.error
+
+
+def test_guard_refuses_an_address_in_any_case(client, notes):
+    for spelling in (
+        "BUDI.SANTOSO@PERTAMINA.COM",
+        "Budi.Santoso@pertamina.com",
+        "budi.santoso@PERTAMINA.COM",
+    ):
+        r = notes.write("/finding.md", f"{spelling} closed 701 tickets.")
+        assert r.error is not None, spelling
+
+
+def test_guard_refuses_an_address_spelled_with_padding(client, notes):
+    r = notes.write("/finding.md", "closed by  budi.santoso@pertamina.com  overall.")
+    assert r.error is not None
+
+
+def test_refused_address_write_does_not_reach_the_volume(client, notes, volume_root):
+    notes.write("/finding.md", "budi.santoso@pertamina.com closed 701 tickets.")
+    assert f"{volume_root}/notes/finding.md" not in client.files.contents
+
+
+def test_guard_covers_an_address_in_frontmatter(notes, client, volume_root):
+    r = notes.write(
+        "/finding.md",
+        "---\ntype: Analysis\ntitle: review for budi.santoso@pertamina.com\n---\n\nbody\n",
+    )
+    assert r.error is not None
+    assert f"{volume_root}/notes/finding.md" not in client.files.contents
+
+
 # ── 5.3 the notes tier writes conformant OKF ─────────────────────────────────
 
 

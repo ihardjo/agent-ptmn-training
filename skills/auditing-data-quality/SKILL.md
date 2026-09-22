@@ -70,6 +70,10 @@ SELECT COUNT(DISTINCT assigned_to)              AS raw,
 FROM workshop_ai_platform.example.sdlc_tickets
 ```
 
+`assigned_to` holds email addresses, and both halves of an address are
+case-insensitive in practice — so `lower(trim(...))` is the whole normalisation
+here, with no internal whitespace left to collapse.
+
 The gap between the two columns is the size of the defect. Report it when the
 question turns on per-person aggregation, because it quantifies how far an
 unnormalised answer would have been off.

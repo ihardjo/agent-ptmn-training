@@ -122,13 +122,21 @@ The agent SHALL be able to record what it learns to a writable prefix of the dur
 
 ### Requirement: Durability does not weaken the privacy constraint
 
-The constraint forbidding personal names in the agent's output SHALL apply to everything the agent writes to the durable tier, not only to what it returns to a caller. A durable file outlives the reply that prompted it and is readable by users who never asked the original question, so it SHALL be treated as the wider disclosure, not the narrower one.
+The constraint forbidding the agent from identifying an individual SHALL apply to everything the agent writes to the durable tier, not only to what it returns to a caller. A durable file outlives the reply that prompted it and is readable by users who never asked the original question, so it SHALL be treated as the wider disclosure, not the narrower one.
+
+The constraint SHALL hold against **every form the identity takes**, not only the form a person would write. Where the data records staff by a derived identifier rather than by name, disclosing that identifier SHALL be a disclosure of the individual: an identifier that names no one in its own text still names someone in effect, and a guard that admits it on that basis is defeated on a technicality.
 
 #### Scenario: A name is not persisted
 
-- **WHEN** the agent writes to the durable tier after querying data containing staff names
+- **WHEN** the agent writes to the durable tier after querying data containing staff identities
 - **THEN** no personal name SHALL appear in the written content
 - **AND** the aggregate or ranked form SHALL be written instead, as it would be in an answer
+
+#### Scenario: A derived identifier is not persisted either
+
+- **WHEN** the agent writes to the durable tier content carrying the identifier the data records a person by, rather than that person's name
+- **THEN** the write SHALL be refused on the same footing as a name
+- **AND** the refusal SHALL remain recoverable, so the agent can restate the finding in ranked form
 
 #### Scenario: Row-level data is not accumulated on the Volume
 

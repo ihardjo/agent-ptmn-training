@@ -67,8 +67,10 @@ WHERE cycle_time_hours IS NOT NULL AND started_at IS NOT NULL
 GROUP BY period;
 
 -- @@ F7: closures concentrate on one individual -- TRUE share, normalised
--- (target ~22%). `initcap(trim(...))` collapses the D5 spelling variants.
-SELECT initcap(trim(regexp_replace(assigned_to, '\\s+', ' '))) AS person,
+-- (target ~22%). `lower(trim(...))` collapses the D5 spelling variants.
+-- `lower`, not `initcap`: identities are email addresses, and an address is
+-- canonically lower-case, so `initcap` would report every row as a variant.
+SELECT lower(trim(regexp_replace(assigned_to, '\\s+', ' '))) AS person,
        COUNT(*) AS closures,
        COUNT(*) / SUM(COUNT(*)) OVER () AS share
 FROM workshop_ai_platform.example.sdlc_tickets
@@ -113,10 +115,10 @@ WHERE status_category <> CASE
         ELSE 'Done' END;
 
 -- @@ D5: spelling variants of one identity (target ~315, 45% of that person's rows)
-SELECT COUNT(*) AS d5_name_variants
+SELECT COUNT(*) AS d5_identity_variants
 FROM workshop_ai_platform.example.sdlc_tickets
 WHERE assigned_to IS NOT NULL
-  AND assigned_to <> initcap(trim(regexp_replace(assigned_to, '\\s+', ' ')));
+  AND assigned_to <> lower(trim(regexp_replace(assigned_to, '\\s+', ' ')));
 
 -- @@ D6: story points on an Incident, which no team estimates (target 10)
 SELECT COUNT(*) AS d6_points_on_incident

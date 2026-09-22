@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from databricks_langchain import ChatDatabricks
-from langchain.agents.middleware import TodoListMiddleware
+from langchain.agents.middleware import PIIMiddleware, TodoListMiddleware
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend
 from deepagents.middleware.filesystem import FilesystemPermission
@@ -209,7 +209,52 @@ def filesystem_permissions() -> list[FilesystemPermission]:
     ]
 
 
-async def init_agent():
+def output_redaction() -> PIIMiddleware:
+    """The net under rule 1: strip an address out of the answer on the way out.
+
+    Rule 1 is the control; this is the net. It cannot *be* the control, because
+    the required output form replaces an identity with its **rank** — an
+    aggregation over the whole result set, which no per-span substitution can
+    produce. `[REDACTED_EMAIL] closed 701 tickets` is private and still the
+    wrong answer, so a redaction firing is a failure of the agent to follow its
+    instructions, not a success of the system.
+
+    What each setting is holding off:
+
+    - `apply_to_input=False` — there is nothing to scrub. No evaluation item
+      names a person in the question; they ask *"Siapa yang paling banyak
+      menutup tiket?"*. Scrubbing the question would also break the agent's
+      ability to decline it by name of the constraint.
+    - `apply_to_tool_results=False` — **load-bearing**. The agent has to group
+      by identity to find the distribution at all; `redact` would collapse
+      every group key to one token and make the concentration unreportable.
+      The constraint is on what the agent writes, not on what it reads.
+    - `strategy="redact"` — not `block`, which raises and fails the run. The
+      durable-write guard in `backends.py` deliberately returns a *recoverable*
+      error so the agent can restate the finding; a run-fatal net would be the
+      opposite of that rule.
+
+    Deliberately no `PIIMiddleware("url", ...)`: the OKF `sources:` URLs in
+    `/wiki/openwiki/` are the citations the format rule requires the agent to
+    reproduce, and redacting them would break traceability.
+    """
+    return PIIMiddleware(
+        "email",
+        strategy="redact",
+        apply_to_input=False,
+        apply_to_output=True,
+        apply_to_tool_results=False,
+    )
+
+
+async def init_agent(redact_output: bool = True):
+    """Build the agent.
+
+    `redact_output=False` is for evaluation only. `after_model` *replaces* the
+    message in graph state, so a scored run with the net on would be measuring
+    the net rather than the model, and every privacy item would pass
+    unconditionally. The net is covered by unit tests instead.
+    """
     skills = [SKILLS_MOUNT] if _skills_present() else None
     if skills:
         logger.info(
@@ -235,5 +280,9 @@ async def init_agent():
         # provides delegation, the filesystem, and skills, but no todo tool, so
         # without this the agent cannot record a plan at all. The middleware
         # lives upstream in langchain now.
-        middleware=[TodoListMiddleware()],
+        middleware=(
+            [TodoListMiddleware(), output_redaction()]
+            if redact_output
+            else [TodoListMiddleware()]
+        ),
     )

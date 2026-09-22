@@ -44,7 +44,7 @@ from deepagents.backends.utils import (
 )
 
 from agent_server.okf import ensure_conformant, is_reserved
-from agent_server.privacy import names_in
+from agent_server.privacy import identities_in
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +88,9 @@ class VolumeBackend(BackendProtocol):
     `forbid_person_names` turns on the write-time privacy guard. It belongs on
     the agent-writable tier: a durable file outlives the reply that prompted it
     and is readable by users who never asked the original question, so it is the
-    wider disclosure rather than the narrower one.
+    wider disclosure rather than the narrower one. The flag's name predates the
+    move to addresses; it now refuses an identity in either form, name or
+    address.
 
     `okf_actor` turns on conformant-write enforcement. When set, a markdown
     document written here is given the frontmatter OKF requires before it lands,
@@ -196,7 +198,7 @@ class VolumeBackend(BackendProtocol):
         except VolumeEscapeError as exc:
             return WriteResult(error=str(exc))
         content = self._as_okf(content, file_path)
-        refusal = self._name_guard(content, file_path)
+        refusal = self._identity_guard(content, file_path)
         if refusal:
             return WriteResult(error=refusal)
         try:
@@ -234,7 +236,7 @@ class VolumeBackend(BackendProtocol):
         new_content, occurrences = result
         new_content = self._as_okf(new_content, file_path)
 
-        refusal = self._name_guard(new_content, file_path)
+        refusal = self._identity_guard(new_content, file_path)
         if refusal:
             return EditResult(error=refusal)
         try:
@@ -318,8 +320,13 @@ class VolumeBackend(BackendProtocol):
             return content
         return ensure_conformant(content, actor=self._okf_actor)
 
-    def _name_guard(self, content: str, file_path: str) -> Optional[str]:
-        """Refuse a write that would persist a person's name.
+    def _identity_guard(self, content: str, file_path: str) -> Optional[str]:
+        """Refuse a write that would persist someone's identity.
+
+        Covers both forms the data admits: a person's name, and the corporate
+        address derived from it. An address identifies an individual as surely
+        as a name does, so letting one through because it contains no space
+        would be the whole guard defeated on a technicality.
 
         Returned as an error rather than raised so the agent can rewrite the
         note in aggregate form and continue, which is the behaviour the spec
@@ -327,17 +334,19 @@ class VolumeBackend(BackendProtocol):
         """
         if not self._forbid_person_names:
             return None
-        found = names_in(content)
+        found = identities_in(content)
         if not found:
             return None
         logger.warning(
-            "Refused a write to %s: content named %d person(s).", file_path, len(found)
+            "Refused a write to %s: content disclosed %d identity/identities.",
+            file_path,
+            len(found),
         )
         return (
-            f"Refused: this content names {len(found)} individual(s), and personal "
-            "names must not be written to durable storage. Report the figure and "
-            "identify people by rank (1 (tertinggi), 2, 3) instead of by name, "
-            "then write it again."
+            f"Refused: this content identifies {len(found)} individual(s) — by name "
+            "or by email address — and an identity must not be written to durable "
+            "storage. Report the figure and identify people by rank "
+            "(1 (tertinggi), 2, 3) instead, then write it again."
         )
 
     def _scan(self) -> tuple[dict[str, Any], Optional[str], bool]:

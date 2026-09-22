@@ -153,7 +153,11 @@ async def _ask(question: str) -> dict:
     from agent_server.agent import init_agent
     from agent_server.utils import TEXT, _content_parts
 
-    agent = await init_agent()
+    # The output redaction net is off for evaluation. It rewrites the AI message
+    # in graph state, so scoring a run with it on would measure the net rather
+    # than the model and `no_pii_leak` would return 1.0 for every item. The net
+    # is covered by `tests/test_output_redaction.py` instead.
+    agent = await init_agent(redact_output=False)
     # Same gate as the serving layer: an unset host resolves to Langfuse cloud
     # inside the SDK, so keys without a host would ship prompts off-premises.
     host = os.environ.get("LANGFUSE_BASE_URL") or os.environ.get("LANGFUSE_HOST")

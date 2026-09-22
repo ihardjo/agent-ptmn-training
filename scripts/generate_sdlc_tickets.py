@@ -157,6 +157,26 @@ LAST_NAMES = (
 )
 HERO = "Budi Santoso"  # F7: closures concentrate here
 
+# Staff appear in the table as corporate addresses, never as names. The address
+# is *derived* from the name rather than drawn independently, so the set of
+# people who exist is still stated once, by the two name tuples above —
+# `agent_server.privacy` reverses this rule to build its identity vocabulary.
+MAIL_DOMAIN = "pertamina.com"
+
+
+def address_for(name: str) -> str:
+    """The corporate address for a person's name.
+
+    Total over `FIRST_NAMES x LAST_NAMES`, and single-valued in reverse: the
+    local part carries exactly one dot, so splitting on it names one person.
+    Initials would not have that property — `Budi` and `Bambang` both reduce to
+    `b.santoso` — which is why the full given name is spelled out.
+    """
+    return f"{name.replace(' ', '.').lower()}@{MAIL_DOMAIN}"
+
+
+HERO_ADDRESS = address_for(HERO)
+
 # Idul Fitri fortnights inside the window — volume spikes, throughput dips (F6).
 IDUL_FITRI_WINDOWS = (
     (date(2025, 3, 24), date(2025, 4, 7)),
@@ -225,11 +245,15 @@ def _sprint_for(d: date) -> str:
 def generate(seed: int = SEED, rows: int = ROWS) -> list[dict]:
     rng = random.Random(seed)
 
+    # Shuffled and sliced as names, then addressed. Drawing the sixty people as
+    # names keeps this draw identical to the one that produced the recorded
+    # magnitudes — the rng sees the same sequence either way, so only the string
+    # each person is written as changes.
     names = [f"{f} {l}" for f in FIRST_NAMES for l in LAST_NAMES]
     rng.shuffle(names)
-    people = names[:60]
-    if HERO not in people:
-        people[0] = HERO
+    people = [address_for(n) for n in names[:60]]
+    if HERO_ADDRESS not in people:
+        people[0] = HERO_ADDRESS
 
     # Pre-compute the day distribution once so volume shape is exact.
     days = [WINDOW_START + timedelta(days=i)
@@ -293,9 +317,9 @@ def generate(seed: int = SEED, rows: int = ROWS) -> list[dict]:
         if status == "New" and rng.random() < 0.6:
             assigned_to = None
         elif closed is not None and rng.random() < 0.22:           # F7
-            assigned_to = HERO
+            assigned_to = HERO_ADDRESS
         else:
-            assigned_to = rng.choice([p for p in people if p != HERO])
+            assigned_to = rng.choice([p for p in people if p != HERO_ADDRESS])
 
         # ── planning ──────────────────────────────────────────────────────────
         sprint = None if unplanned else _sprint_for(created_day)
@@ -389,12 +413,21 @@ def _inject_defects(rng: random.Random, rows: list[dict]) -> None:
         rows[i]["status_category"] = rng.choice(
             [c for c in ("To Do", "In Progress", "Done") if c != correct])
 
-    # D5 — the hero's name spelled inconsistently (30 rows). The only defect
-    # that produces a *silently wrong* answer rather than a detectable one: a
-    # naive GROUP BY splits them out and understates F7.
-    variants = (HERO.lower(), HERO.upper(), f" {HERO}", f"{HERO} ",
-                HERO.replace(" ", "  "))
-    hero_rows = [i for i in range(n) if rows[i]["assigned_to"] == HERO]
+    # D5 — the hero's address spelled inconsistently. The only defect that
+    # produces a *silently wrong* answer rather than a detectable one: a naive
+    # GROUP BY splits them out and understates F7.
+    #
+    # Five variants, as before, but an address admits no internal-whitespace
+    # form — so the one that was `Budi  Santoso` becomes a domain-case form
+    # instead. Both halves of an address are case-insensitive in practice,
+    # which is what makes every one of these the same mailbox.
+    _hero_local, _hero_domain = HERO_ADDRESS.split("@")
+    variants = (HERO_ADDRESS.upper(),
+                f" {HERO_ADDRESS}",
+                f"{HERO_ADDRESS} ",
+                f"{_hero_local.title()}@{_hero_domain}",
+                f"{_hero_local}@{_hero_domain.upper()}")
+    hero_rows = [i for i in range(n) if rows[i]["assigned_to"] == HERO_ADDRESS]
     for i in rng.sample(hero_rows, int(round(len(hero_rows) * 0.45))):
         rows[i]["assigned_to"] = rng.choice(variants)
         used.add(i)
@@ -409,10 +442,15 @@ def _inject_defects(rng: random.Random, rows: list[dict]) -> None:
 
 
 def _norm(name: str | None) -> str | None:
-    """Normalise an identity the way D5 requires you to before aggregating."""
+    """Normalise an identity the way D5 requires you to before aggregating.
+
+    Lower-cased rather than title-cased: identities are addresses now, and both
+    halves of an address are case-insensitive in practice. This is the same
+    normalisation `lower(trim(...))` performs in SQL.
+    """
     if name is None:
         return None
-    return " ".join(name.split()).title()
+    return " ".join(name.split()).lower()
 
 
 def verify(rows: list[dict]) -> None:
@@ -465,8 +503,8 @@ def verify(rows: list[dict]) -> None:
     print(f"F6  Idul Fitri cycle {statistics.median(inside) / 24:.1f} d vs "
           f"{statistics.median(outside) / 24:.1f} d elsewhere (target ~2x)")
 
-    hero_true = sum(1 for r in closed if _norm(r["assigned_to"]) == HERO)
-    hero_naive = sum(1 for r in closed if r["assigned_to"] == HERO)
+    hero_true = sum(1 for r in closed if _norm(r["assigned_to"]) == HERO_ADDRESS)
+    hero_naive = sum(1 for r in closed if r["assigned_to"] == HERO_ADDRESS)
     print(f"F7  hero share of closures {hero_true / len(closed):.1%} normalised "
           f"(target ~22%) vs {hero_naive / len(closed):.1%} naive  ← D5 at work")
 
@@ -476,8 +514,8 @@ def verify(rows: list[dict]) -> None:
              and r["status"] not in CLOSED_STATUSES)
     d3 = sum(1 for r in rows if r["status"] == "Done" and r["resolution"] is None)
     d4 = sum(1 for r in rows if r["status_category"] != STATUS_CATEGORY[r["status"]])
-    d5 = sum(1 for r in rows if r["assigned_to"] not in (None, HERO)
-             and _norm(r["assigned_to"]) == HERO)
+    d5 = sum(1 for r in rows if r["assigned_to"] not in (None, HERO_ADDRESS)
+             and _norm(r["assigned_to"]) == HERO_ADDRESS)
     d6 = sum(1 for r in rows if r["ticket_type"] == "Incident"
              and r["story_points"] is not None)
     for label, got, want in (("D1 closed<created", d1, 8), ("D2 duration unclosed", d2, 12),
@@ -523,16 +561,23 @@ def insert_batches(rows: list[dict], table: str, size: int = 200):
         yield f"INSERT INTO {table} ({cols}) VALUES\n{values}"
 
 
-def create_table_sql(table: str) -> str:
+def create_table_sql(table: str, *, replace: bool = False) -> str:
     """DDL for the table.
 
     Column mapping is not optional here. Delta rejects ' ,;{}()\\n\\t=' in
     column names unless name-based column mapping is enabled, and three of our
     columns carry a space, parentheses, and a slash by design. The existing
     `data_tiket_it` is configured the same way, for the same reason.
+
+    `replace=True` emits `CREATE OR REPLACE TABLE`, which is how the table is
+    regenerated in place. It is one atomic statement rather than a drop
+    followed by a create, so the table is never absent partway through — and
+    Delta keeps the prior version, so the old contents remain readable by time
+    travel (`VERSION AS OF`) rather than being destroyed outright.
     """
+    verb = "CREATE OR REPLACE TABLE" if replace else "CREATE TABLE"
     body = ",\n  ".join(f"`{c}` {t}" for c, t in COLUMNS)
-    return (f"CREATE TABLE {table} (\n  {body}\n) USING DELTA\n"
+    return (f"{verb} {table} (\n  {body}\n) USING DELTA\n"
             "TBLPROPERTIES ('delta.columnMapping.mode' = 'name')")
 
 

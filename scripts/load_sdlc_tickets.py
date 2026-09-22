@@ -18,7 +18,11 @@ Rows are loaded as batched multi-row INSERTs, which needs no Volume and no
 cluster — only a SQL warehouse.
 
 Usage:
+    # first time, table does not exist
     uv run python -m scripts.load_sdlc_tickets --create --load --verify
+
+    # regenerate an existing table in place (the destructive one)
+    uv run python -m scripts.load_sdlc_tickets --replace --load --verify
 """
 
 from __future__ import annotations
@@ -73,7 +77,11 @@ def main() -> None:
     ap.add_argument("--rows", type=int, default=ROWS)
     ap.add_argument("--batch", type=int, default=200)
     ap.add_argument("--create", action="store_true")
+    ap.add_argument("--replace", action="store_true",
+                    help="regenerate in place: CREATE OR REPLACE TABLE, then load")
     ap.add_argument("--load", action="store_true")
+    ap.add_argument("--allow-append", action="store_true",
+                    help="permit --load into a table that already has rows")
     ap.add_argument("--verify", action="store_true")
     args = ap.parse_args()
 
@@ -81,13 +89,31 @@ def main() -> None:
     who = run(client, args.warehouse, "SELECT current_user()")[0][0]
     print(f"connected as {who} via profile {args.profile!r}")
 
-    if args.create:
-        run(client, args.warehouse, create_table_sql(args.table))
+    if args.create or args.replace:
+        run(client, args.warehouse,
+            create_table_sql(args.table, replace=args.replace))
         run(client, args.warehouse,
             f"COMMENT ON TABLE {args.table} IS '{TABLE_COMMENT}'")
-        print(f"created {args.table} with a comment recording the planted defects")
+        verb = "replaced" if args.replace else "created"
+        print(f"{verb} {args.table} with a comment recording the planted defects")
 
     if args.load:
+        # Rows are appended, never upserted, so loading into a table that
+        # already holds a generation doubles it — 8,000 rows, every planted
+        # magnitude halved, and nothing errors. That is a silently wrong table,
+        # which is the one failure this file exists to prevent, so it has to be
+        # asked for explicitly. `--replace` emptied the table a moment ago and
+        # is therefore exempt.
+        if not (args.replace or args.allow_append):
+            existing = int(run(
+                client, args.warehouse, f"SELECT COUNT(*) FROM {args.table}")[0][0])
+            if existing:
+                ap.error(
+                    f"{args.table} already holds {existing} row(s) and --load only "
+                    "appends. Pass --replace to regenerate it in place (atomic, and "
+                    "the prior version stays readable with VERSION AS OF), or "
+                    "--allow-append if doubling the table is genuinely intended."
+                )
         rows = generate(args.seed, args.rows)
         batches = list(insert_batches(rows, args.table, args.batch))
         for i, statement in enumerate(batches, 1):
@@ -109,8 +135,8 @@ def main() -> None:
             for row in run(client, args.warehouse, statement):
                 print("   " + " | ".join("NULL" if v is None else str(v) for v in row))
 
-    if not (args.create or args.load or args.verify):
-        ap.error("nothing to do: pass --create, --load, and/or --verify")
+    if not (args.create or args.replace or args.load or args.verify):
+        ap.error("nothing to do: pass --create/--replace, --load, and/or --verify")
 
 
 if __name__ == "__main__":
