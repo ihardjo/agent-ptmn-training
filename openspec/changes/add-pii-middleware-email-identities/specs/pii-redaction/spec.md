@@ -1,19 +1,20 @@
 ## Purpose
 
-Defines the output-side net that removes identity-bearing values from what the agent returns to a caller, and the boundaries of that net: where it applies, where applying it would destroy required behaviour, and which surfaces it does not reach. The net exists because the agent's privacy rule is otherwise enforced only by instruction on the answer path.
+Defines the system-enforced net that keeps identity-bearing values out of what the agent returns to a caller, and the boundaries of that net: where in the turn it has to act, where acting would destroy required behaviour, and which surfaces it does not reach. The net exists because the agent's privacy rule is otherwise enforced only by instruction on the answer path.
 
 ## ADDED Requirements
 
-### Requirement: Identity-bearing values are removed from the answer by the system
+### Requirement: No identity reaches the caller in the agent's answer
 
-The agent's answer SHALL be checked for identity-bearing values by the system before it reaches the caller, and any found SHALL be removed. This check SHALL NOT depend on the agent having chosen to comply with its instructions.
+The answer delivered to a caller SHALL contain no identity-bearing value, and this SHALL NOT depend on the agent having chosen to comply with its instructions. The requirement is on the delivered bytes; where in the turn the system acts to achieve it is a design decision, constrained by the requirement below that it act before the model generates.
 
 Detection SHALL be by the **shape** of the value rather than by membership of an enumerated list of known identities. A closed vocabulary cannot recognise a spelling nobody enumerated; shape-based detection is what covers the identities the vocabulary does not hold.
 
-#### Scenario: An answer carrying an identity value
+#### Scenario: An answer that would otherwise carry an identity value
 
-- **WHEN** the agent's answer contains a value matching the shape of an identity field
-- **THEN** that value SHALL NOT appear in the response delivered to the caller
+- **WHEN** the agent is asked a question whose data contains identity values
+- **THEN** no identity value SHALL appear in the response delivered to the caller
+- **AND** this SHALL be verified over the transport the routes actually serve, not only over an in-process call
 
 #### Scenario: A compliant answer is delivered unchanged
 
@@ -50,23 +51,43 @@ Detection SHALL NOT terminate the request. The caller SHALL receive an answer wi
 - **THEN** the request SHALL complete and return a response
 - **AND** the caller SHALL NOT receive an error status in place of the answer
 
-### Requirement: Values the agent must reason over are not removed before it sees them
+### Requirement: Identities are pseudonymised before the model receives them
 
-Identity values SHALL remain intact in the results of tools the agent calls. The agent is required to aggregate by identity in order to discover how work is distributed; removing identities from tool results would collapse distinct individuals into one indistinguishable value and make the distribution unreportable.
+Identity values SHALL be replaced with a stable pseudonym in tool results **before the model sees them**. A model that never receives an identity cannot emit one, and that guarantee holds regardless of how the answer is subsequently transported.
 
-The constraint SHALL apply to what the agent writes, not to what it reads.
+Removal SHALL NOT be applied only on the way out. Where the answer is delivered token by token as the model produces it, a rewrite performed after generation reaches the stored conversation but not the bytes already sent, so an output-side control can pass every test and still protect no served request.
 
-#### Scenario: Aggregating by identity
+The pseudonym SHALL preserve distinguishability: two different people SHALL receive two different pseudonyms, and the same value SHALL always receive the same one. The agent is required to aggregate by identity to discover how work is distributed, and a scheme that collapsed every identity to a single token would make the distribution unreportable.
 
-- **WHEN** the agent queries the source data grouped by an identity field
-- **THEN** the returned rows SHALL carry their distinct identity values
-- **AND** the agent SHALL be able to compute each identity's share of the total
+The pseudonym SHALL be derived from the value exactly as stored, without normalising it first. Normalising on the agent's behalf would silently repair the dataset's planted identity-variant defect, removing the requirement that the agent normalise before aggregating.
 
-#### Scenario: Removal that would destroy grouping is not applied
+#### Scenario: The model never receives an identity
 
-- **WHEN** identity removal is configured
-- **THEN** it SHALL NOT be applied to tool results
-- **AND** it SHALL NOT be applied to the caller's question, which the agent must be able to read in full in order to decline it correctly
+- **WHEN** a tool returns rows containing identity values
+- **THEN** the content passed to the model SHALL contain no identity value
+- **AND** this SHALL hold for the streamed answer as well as a non-streamed one
+
+#### Scenario: Distinct people remain distinct
+
+- **WHEN** a tool returns rows for two different people
+- **THEN** the pseudonymised rows SHALL carry two different values
+- **AND** the agent SHALL still be able to compute each one's share of the total
+
+#### Scenario: One person does not split
+
+- **WHEN** the same identity value appears in several rows
+- **THEN** every occurrence SHALL receive the same pseudonym
+
+#### Scenario: The planted variant defect is not repaired
+
+- **WHEN** one person appears under several spellings that differ only in case or surrounding whitespace
+- **THEN** those spellings SHALL receive different pseudonyms
+- **AND** an agent aggregating without normalising SHALL still understate the concentration
+
+#### Scenario: An identity in the question is pseudonymised too
+
+- **WHEN** the caller's question contains an identity value
+- **THEN** the model SHALL receive it pseudonymised, so it cannot echo the value back
 
 ### Requirement: Values required for traceability are not removed
 

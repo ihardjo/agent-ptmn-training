@@ -33,7 +33,7 @@ WIKI_NOTES_SUBDIR = "notes"
 # Chosen by measurement, not preference: of the open-weight endpoints served
 # here, this is the one that actually uses the planning tool. See design
 # Decision 9 of `migrate-to-deep-agent`.
-MODEL_ENDPOINT = "databricks-qwen35-122b-a10b"
+MODEL_ENDPOINT = "databricks-qwen35-122b-a10b" # TODO: 1. LLM Selection
 
 # OKF §7 actor convention: `<producer>/<version>` for an agent. Recorded in
 # `generated.by` on every note the agent writes, so a reader can tell which
@@ -210,29 +210,34 @@ def filesystem_permissions() -> list[FilesystemPermission]:
 
 
 def output_redaction() -> PIIMiddleware:
-    """The net under rule 1: strip an address out of the answer on the way out.
+    """Pseudonymise staff addresses *before the model sees them*.
 
-    Rule 1 is the control; this is the net. It cannot *be* the control, because
-    the required output form replaces an identity with its **rank** — an
-    aggregation over the whole result set, which no per-span substitution can
-    produce. `[REDACTED_EMAIL] closed 701 tickets` is private and still the
-    wrong answer, so a redaction firing is a failure of the agent to follow its
-    instructions, not a success of the system.
+    **Why upstream and not on the way out.** Redacting the answer does not work
+    on this transport. `after_model` rewrites the message in graph state, but
+    both routes serve from `astream(stream_mode=["updates", "messages"])` and
+    the answer has already gone out token by token on the `messages` channel
+    before that hook runs. langchain ships a stream transformer for exactly
+    this, but it processes langgraph v3 protocol events, and legacy
+    `AIMessageChunk` tuples from `stream_mode="messages"` never reach it. An
+    output-side net therefore passes every unit test, works under `ainvoke`,
+    and protects no real request — which is precisely what happened before this
+    was rewritten.
 
-    What each setting is holding off:
+    The only point that is genuinely upstream of token generation is
+    `before_model`. If the model never receives an address it cannot emit one,
+    and that holds whatever the transport does afterwards.
 
-    - `apply_to_input=False` — there is nothing to scrub. No evaluation item
-      names a person in the question; they ask *"Siapa yang paling banyak
-      menutup tiket?"*. Scrubbing the question would also break the agent's
-      ability to decline it by name of the constraint.
-    - `apply_to_tool_results=False` — **load-bearing**. The agent has to group
-      by identity to find the distribution at all; `redact` would collapse
-      every group key to one token and make the concentration unreportable.
-      The constraint is on what the agent writes, not on what it reads.
-    - `strategy="redact"` — not `block`, which raises and fails the run. The
-      durable-write guard in `backends.py` deliberately returns a *recoverable*
-      error so the agent can restate the finding; a run-fatal net would be the
-      opposite of that rule.
+    **Why `hash` and not `redact`.** `redact` would collapse every identity to
+    one token, and the agent has to group by identity to find how concentrated
+    closures are — the distribution would become unreportable. A hash is
+    pseudonymous: distinct people stay distinct, so `GROUP BY assigned_to`
+    still works, while nothing that reaches the model identifies anybody.
+
+    This keeps the D5 lesson intact rather than papering over it. The digest is
+    taken over the raw value, so the hero's six spellings hash six ways: an
+    agent that aggregates without normalising still splits one person into
+    several groups and still understates the concentration, exactly as before.
+    Normalising in SQL first yields one value and therefore one digest.
 
     Deliberately no `PIIMiddleware("url", ...)`: the OKF `sources:` URLs in
     `/wiki/openwiki/` are the citations the format rule requires the agent to
@@ -240,10 +245,15 @@ def output_redaction() -> PIIMiddleware:
     """
     return PIIMiddleware(
         "email",
-        strategy="redact",
-        apply_to_input=False,
+        strategy="hash",
+        # An address pasted into the question is pseudonymised on the same
+        # footing, so the model cannot echo one back.
+        apply_to_input=True,
+        # Kept on as a backstop for non-streaming callers using `ainvoke`,
+        # where `after_model` does reach the answer.
         apply_to_output=True,
-        apply_to_tool_results=False,
+        # The load-bearing one. This is what actually protects a served request.
+        apply_to_tool_results=True,
     )
 
 
@@ -267,19 +277,25 @@ async def init_agent(redact_output: bool = True):
         logger.info("No skills found under %s — continuing without them.", SKILLS_DIR)
 
     return create_deep_agent(
-        # `gpt-oss-120b` never called `write_todos` on a multi-step question
-        # even when told to plan first, so the deep loop cost turns without
-        # buying the capability. See `MODEL_ENDPOINT`.
         model=ChatDatabricks(endpoint=MODEL_ENDPOINT),
-        tools=await mcp_tools(),
         system_prompt=SYSTEM_PROMPT,
+
+        # TODO 3: Tool Selection:
+        # 1. get_current_time()
+        # 2. print_hello_world()
+        # 3. Databricks Managed MCP: SQL
+        # 4. Databricks Managed MCP: UC Functions
+        tools=await mcp_tools(),  # [sql, tool2, ...]
+
+        # TODO 4: Skill Selection:
+        # 1. /skill-1
+        # 2. /skill-2
+        # 3. /...
+        skills=skills,  # [sql, tool2, ...]
+
         backend=build_backend(),
-        skills=skills,
         permissions=filesystem_permissions(),
-        # Planning is not part of `create_deep_agent` in deepagents 0.7.15 — it
-        # provides delegation, the filesystem, and skills, but no todo tool, so
-        # without this the agent cannot record a plan at all. The middleware
-        # lives upstream in langchain now.
+        
         middleware=(
             [TodoListMiddleware(), output_redaction()]
             if redact_output

@@ -24,6 +24,17 @@ See `proposal.md` — Why. The constraints that shape the approach:
 
 ## Decisions
 
+> **Decision 4 was wrong and has been reversed.** It configured the middleware
+> on the way out (`apply_to_output`, `strategy="redact"`) and reasoned that
+> tool results must stay intact. That passed every unit test, worked under
+> `ainvoke`, and protected **no served request**: both routes stream with
+> `astream(stream_mode=["updates", "messages"])`, and the answer is emitted
+> token by token on the `messages` channel before `after_model` rewrites
+> state. langchain's stream transformer exists for this but reads langgraph v3
+> protocol events and never sees legacy `AIMessageChunk` tuples. The mistake
+> was verifying the net against synthetic `AIMessage` objects instead of the
+> transport the routes use. See Decision 4a.
+
 ### 1. Derivation rule: `{first}.{last}@pertamina.com`, lowercased
 
 `Budi Santoso` → `budi.santoso@pertamina.com`. One rule, total, reversible by splitting the local part on `.`.
@@ -63,6 +74,41 @@ PIIMiddleware(
 | `strategy="redact"` | `block` raises `PIIDetectionError` and fails the run. `backends.py:324` states the house rule explicitly: the guard returns a recoverable error *"so the agent can rewrite the note and continue — the constraint must not be satisfiable by declining."* A run-fatal guard is the opposite. |
 
 *Alternative seriously considered and rejected: `apply_to_tool_results` with `strategy="hash"`.* Pseudonymous hashing preserves groupability, so the agent could still find the distribution with identities already gone — the strongest possible containment. It fails on this data: `_redaction.py:300` hashes `match["value"]`, the **raw** matched text. The planted variants differ by case, so `Budi.Santoso@…` and `budi.santoso@…` hash to different digests, splitting one person across groups and **understating the concentration** — the exact failure the dataset's variant defect exists to teach. A normalising detector could repair it, but doing so would perform the normalisation the agent is supposed to demonstrate, deleting the lesson to save a turn.
+
+### 4a. The net acts before the model, and pseudonymises rather than removes
+
+```python
+PIIMiddleware("email", strategy="hash",
+              apply_to_input=True, apply_to_output=True, apply_to_tool_results=True)
+```
+
+`before_model` is the only hook genuinely upstream of token generation. If the
+model never receives an address it cannot emit one, and that holds whatever the
+transport does afterwards — which is the property Decision 4 lacked.
+
+`hash` rather than `redact` because `redact` collapses every identity to one
+token and the agent must group by identity to find the distribution at all. A
+digest keeps people distinct while identifying nobody.
+
+The digest is taken over the raw value, which preserves the D5 lesson rather
+than papering over it: the hero's six spellings hash six ways, so an agent that
+aggregates without normalising still understates the concentration. Normalising
+in SQL first yields one value and one digest. This is the *opposite* of the
+concern raised against hashing in the original Decision 4 — there it was a flaw
+because the middleware was meant to do the normalising; here the agent is still
+required to, so variant-splitting is the intended behaviour.
+
+`apply_to_output` stays on as a backstop for non-streaming `ainvoke` callers.
+
+**Verified over the real transport**, not a synthetic message: driving
+`collect_response_output(agent_stream(...))` on two questions returns an answer
+carrying zero identities, with `email_hash` tokens present.
+
+**Known residue.** `function_call_output` items still reach the caller carrying
+raw rows: a tool result is emitted on the `updates` channel when the tool runs,
+before `before_model` can rewrite it in state. The answer is clean; the tool
+activity pane is not. Closing that needs transport-level filtering in
+`utils.py`, which is out of scope here.
 
 ### 5. The evaluation builds the agent without the net
 
