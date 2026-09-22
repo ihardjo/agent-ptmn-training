@@ -85,7 +85,7 @@ scripts/
   start_app.py      ← Launches server + React chat UI
   preflight.py      ← Pre-deploy checks
   discover_tools.py ← Lists available MCP tools from Databricks
-  seed_wiki.py      ← Uploads wiki_seed/ to the Volume's openwiki/ tree
+  seed_wiki.py      ← Uploads wiki_seed/ to the Volume's raw/ tree
   check_okf.py      ← Checks the seed and the Volume for OKF conformance
   check_skills.py   ← Checks the skills tier for authoring-standard conformance
 app.yaml            ← Databricks Apps config — used by UI/Git deploys
@@ -119,13 +119,13 @@ may write there. Built in `agent_server/agent.py:build_backend()`:
 |---|---|---|---|
 | `/` | the thread | the agent | yes (scratch, discarded) |
 | `/skills/` | a merge | people, via the repo | no — deny rule |
-| `/wiki/openwiki/` | a sync | people, via OpenWiki | no — deny rule |
+| `/wiki/raw/` | a sync | people, via OpenWiki | no — deny rule |
 | `/wiki/notes/` | durable | the agent | yes |
 
 Both `/wiki/` prefixes are subdirectories of **one** Unity Catalog Volume in the
 Jakarta workspace, reached over the Files API because Databricks Apps have no
 FUSE mount for Volumes. A volume grant is per-volume, not per-path, so
-read-only on `/wiki/openwiki/` is enforced by the `FilesystemPermission` deny
+read-only on `/wiki/raw/` is enforced by the `FilesystemPermission` deny
 rule in `filesystem_permissions()` and **not** by the grant — treat a gap there
 as a correctness bug. Note `/wiki/` itself is deliberately not a route: a loose
 `/wiki/x.md` falls through to scratch rather than quietly becoming durable.

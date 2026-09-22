@@ -11,11 +11,11 @@ what the column is for.
 
 | Skill | Purpose | Owner | Version | Dependencies | Evaluation status |
 |---|---|---|---|---|---|
-| `computing-target-adherence` | Adherence and breach counts, joining the table to wiki-held targets | ihardjo | 1 | `/wiki/openwiki/policies/resolution-targets.md`, `/wiki/openwiki/policies/breach-counting.md`, `/wiki/openwiki/definitions/duration-basis.md`; columns `cycle_time_hours`, `ticket_type`, `priority`, `closed_at`, `started_at` | not yet evaluated — task 5.4 |
+| `computing-target-adherence` | Adherence and breach counts, joining the table to wiki-held targets | ihardjo | 1 | `/wiki/raw/policies/resolution-targets.md`, `/wiki/raw/policies/breach-counting.md`, `/wiki/raw/definitions/duration-basis.md`; columns `cycle_time_hours`, `ticket_type`, `priority`, `closed_at`, `started_at` | not yet evaluated — task 5.4 |
 | `auditing-data-quality` | The five planted defect classes and their detecting queries | ihardjo | 1 | columns `created_at`, `closed_at`, `status`, `status_category`, `resolution`, `cycle_time_hours`, `assigned_to` | not yet evaluated — task 5.4 |
 | `splitting-planned-unplanned-work` | Planned versus unplanned effort split | ihardjo | 1 | columns `ticket_type`, `sprint`, `Time Spent (hours)`, `cycle_time_hours` | not yet evaluated — task 5.4 |
 | `measuring-sprint-velocity` | Story points per sprint, and the null-coverage problem | ihardjo | 1 | columns `story_points`, `sprint`, `status_category` | not yet evaluated — task 5.4 |
-| `escalating-breaches` | Escalation routing for breached tickets, with its trust state | ihardjo | 1 | `/wiki/openwiki/policies/escalation-matrix.md` (expired); `computing-target-adherence` | not yet evaluated — task 5.4 |
+| `escalating-breaches` | Escalation routing for breached tickets, with its trust state | ihardjo | 1 | `/wiki/raw/policies/escalation-matrix.md` (expired); `computing-target-adherence` | not yet evaluated — task 5.4 |
 
 ## Distractors
 

@@ -21,7 +21,7 @@ from agent_server.okf import (
     parse,
 )
 
-SEED = pathlib.Path(__file__).resolve().parent.parent / "wiki_seed" / "openwiki"
+SEED = pathlib.Path(__file__).resolve().parent.parent / "wiki_seed" / "raw"
 ACTOR = "agent-ptmn-training/test-model"
 FIXED = datetime(2026, 9, 18, 7, 30, 0, tzinfo=timezone.utc)
 

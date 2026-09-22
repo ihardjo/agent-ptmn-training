@@ -25,7 +25,7 @@ def score(read_paths, expected=(), tolerated=()):
 
 SKILL_A = "/skills/computing-target-adherence/SKILL.md"
 SKILL_B = "/skills/checking-due-dates/SKILL.md"
-WIKI = "/wiki/openwiki/policies/resolution-targets.md"
+WIKI = "/wiki/raw/policies/resolution-targets.md"
 
 
 def test_reads_the_right_skill():

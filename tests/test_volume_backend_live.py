@@ -49,7 +49,7 @@ def live_client():
 
 @pytest.fixture(scope="module")
 def live_source(live_client):
-    return VolumeBackend(live_client, os.environ["DATABRICKS_WIKI_VOLUME"], "openwiki")
+    return VolumeBackend(live_client, os.environ["DATABRICKS_WIKI_VOLUME"], "raw")
 
 
 @pytest.fixture

@@ -24,14 +24,14 @@ from dotenv import load_dotenv
 REPO_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=REPO_ROOT / ".env", override=True)
 
-SEED_DIR = REPO_ROOT / "wiki_seed" / "openwiki"
+SEED_DIR = REPO_ROOT / "wiki_seed" / "raw"
 
 # Each tier is its own bundle, checked separately. They are not one bundle with
 # two subdirectories, for two reasons: `/wiki/` itself is not a route, so a
 # shared bundle root would have nowhere reachable to live; and the seed's
 # cross-links are bundle-relative (`/policies/...`), which only resolves if the
 # tier is the root. §3 allows a bundle to be a subdirectory, so two is fine.
-SUBDIRS = ("openwiki", "notes")
+SUBDIRS = ("raw", "notes")
 
 
 def seed_documents() -> dict[str, str]:

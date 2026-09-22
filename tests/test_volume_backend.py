@@ -13,7 +13,7 @@ from agent_server.backends import VolumeBackend
 def test_same_relative_path_resolves_into_two_distinct_tiers(client, source, notes, volume_root):
     """One Volume, two subdirectories, two tiers — the whole basis of the split."""
     a, b = source, notes
-    assert a._resolve("/notes.md") == f"{volume_root}/openwiki/notes.md"
+    assert a._resolve("/notes.md") == f"{volume_root}/raw/notes.md"
     assert b._resolve("/notes.md") == f"{volume_root}/notes/notes.md"
     assert a._resolve("/notes.md") != b._resolve("/notes.md")
 
@@ -29,7 +29,7 @@ def test_traversal_out_of_the_subdirectory_is_refused(client, escape, source):
 
 
 def test_traversal_inside_the_subdirectory_is_allowed(client, source, volume_root):
-    assert source._resolve("/policies/../index.md") == f"{volume_root}/openwiki/index.md"
+    assert source._resolve("/policies/../index.md") == f"{volume_root}/raw/index.md"
 
 
 def test_escape_arrives_as_an_error_result_not_a_raise(client, source, notes):
@@ -153,7 +153,7 @@ def test_missing_file_is_an_error_result(client, source):
 
 
 def test_unreachable_volume_is_an_error_result_on_every_operation(broken_client, volume_root):
-    b = VolumeBackend(broken_client, volume_root, "openwiki")
+    b = VolumeBackend(broken_client, volume_root, "raw")
     assert b.read("/a.md").error is not None
     assert b.write("/a.md", "x").error is not None
     assert b.ls("/").error is not None
@@ -163,7 +163,7 @@ def test_unreachable_volume_is_an_error_result_on_every_operation(broken_client,
 
 
 def test_non_utf8_content_is_reported_not_raised(client, source, volume_root):
-    client.files.contents[f"{volume_root}/openwiki/blob.md"] = b"\xff\xfe\x00binary"
+    client.files.contents[f"{volume_root}/raw/blob.md"] = b"\xff\xfe\x00binary"
     r = source.read("/blob.md")
     assert r.error is not None and "UTF-8" in r.error
 
@@ -228,8 +228,8 @@ def test_a_truncated_scan_says_so(client, volume_root, monkeypatch):
 
     monkeypatch.setattr(backends, "MAX_SCAN_FILES", 1)
     for i in range(4):
-        client.files.contents[f"{volume_root}/openwiki/doc{i}.md"] = b"---\ntype: R\n---\n\nneedle\n"
-    b = backends.VolumeBackend(client, volume_root, "openwiki")
+        client.files.contents[f"{volume_root}/raw/doc{i}.md"] = b"---\ntype: R\n---\n\nneedle\n"
+    b = backends.VolumeBackend(client, volume_root, "raw")
     assert b.grep("needle").truncated is True
     assert b.glob("*.md").truncated is True
 

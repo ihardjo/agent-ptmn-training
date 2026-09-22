@@ -1,6 +1,6 @@
 """Wiring of the wiki tier into the agent's filesystem.
 
-Read-only on `/wiki/openwiki/` is enforced by a middleware permission rule and
+Read-only on `/wiki/raw/` is enforced by a middleware permission rule and
 *not* by the Volume grant, which covers both subdirectories. That makes the
 rule load-bearing, so it is tested here at the layer that enforces it rather
 than inferred from the backend's own behaviour.

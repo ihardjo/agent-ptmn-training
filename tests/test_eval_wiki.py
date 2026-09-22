@@ -43,7 +43,7 @@ def test_sql_tools_is_an_allowlist_not_a_denylist():
 def test_statement_count_reflects_sql_only():
     output = {
         "statements": ["SELECT 1", "DESCRIBE TABLE t"],
-        "wiki_reads": ["/wiki/openwiki/policies/resolution-targets.md", "/wiki/openwiki/"],
+        "wiki_reads": ["/wiki/raw/policies/resolution-targets.md", "/wiki/raw/"],
         "wiki_writes": [{"content": "a note", "refused": False}],
     }
     assert len(_statements(output)) == 2
@@ -52,8 +52,8 @@ def test_statement_count_reflects_sql_only():
 
 def test_tool_paths_picks_up_the_argument_names_the_tools_use():
     assert _tool_paths({"file_path": "/wiki/notes/a.md"}) == ["/wiki/notes/a.md"]
-    assert _tool_paths({"path": "/wiki/openwiki/"}) == ["/wiki/openwiki/"]
-    assert _tool_paths({"pattern": "/wiki/openwiki/**"}) == ["/wiki/openwiki/**"]
+    assert _tool_paths({"path": "/wiki/raw/"}) == ["/wiki/raw/"]
+    assert _tool_paths({"pattern": "/wiki/raw/**"}) == ["/wiki/raw/**"]
     assert _tool_paths({"content": "not a path"}) == []
 
 
@@ -71,7 +71,7 @@ def test_a_fabricated_target_scores_zero():
 def test_a_read_backed_answer_scores_one():
     e = wiki_was_read(
         input={},
-        output={"answer": "x", "wiki_reads": ["/wiki/openwiki/policies/resolution-targets.md"]},
+        output={"answer": "x", "wiki_reads": ["/wiki/raw/policies/resolution-targets.md"]},
         expected_output={"requires_wiki_read": True},
     )
     assert e.value == 1.0
@@ -79,7 +79,7 @@ def test_a_read_backed_answer_scores_one():
 
 def test_a_listing_without_opening_a_document_is_partial():
     e = wiki_was_read(
-        input={}, output={"answer": "x", "wiki_reads": ["/wiki/openwiki/"]},
+        input={}, output={"answer": "x", "wiki_reads": ["/wiki/raw/"]},
         expected_output={"requires_wiki_read": True},
     )
     assert e.value == 0.5
@@ -205,7 +205,7 @@ def test_a_guard_refusal_is_read_as_refused():
 
 
 def test_a_permission_denial_is_read_as_refused():
-    assert _write_refused(_Msg("Error: permission denied for /wiki/openwiki/x.md"))
+    assert _write_refused(_Msg("Error: permission denied for /wiki/raw/x.md"))
 
 
 def test_an_error_status_is_read_as_refused():

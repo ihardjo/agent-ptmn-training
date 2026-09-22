@@ -6,7 +6,7 @@ OpenWiki: a trainee with the Jakarta credential can populate the source tree
 from the repository and run the evaluation. It is also the worked example of
 the format — trainees read it to see what a conformant concept looks like.
 
-Only `openwiki/` is written. `notes/` is the agent's, and a re-seed must not
+Only `raw/` is written. `notes/` is the agent's, and a re-seed must not
 touch it: the whole point of the provenance split is that refreshing source
 content cannot destroy what the agent wrote.
 
@@ -29,8 +29,8 @@ from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
 
-SEED_DIR = Path(__file__).resolve().parent.parent / "wiki_seed" / "openwiki"
-SOURCE_SUBDIR = "openwiki"
+SEED_DIR = Path(__file__).resolve().parent.parent / "wiki_seed" / "raw"
+SOURCE_SUBDIR = "raw"
 
 
 def jakarta_client() -> WorkspaceClient:

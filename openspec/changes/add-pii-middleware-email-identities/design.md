@@ -20,7 +20,7 @@ See `proposal.md` — Why. The constraints that shape the approach:
 
 - Scrubbing the `updates` stream channel. Documented as uncovered (see Decision 7).
 - Detecting identities in free text (ticket titles, root causes). Titles are Bahasa Indonesia work descriptions and contain no identities by construction.
-- Any change to the `/wiki/openwiki/` read-only tier or the OKF write path.
+- Any change to the `/wiki/raw/` read-only tier or the OKF write path.
 
 ## Decisions
 

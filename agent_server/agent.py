@@ -25,9 +25,9 @@ SKILLS_MOUNT = "/skills/"
 
 # The two halves of the wiki tier. Both are subdirectories of one Unity Catalog
 # Volume; the prefix, not the storage, is what states provenance.
-WIKI_SOURCE_MOUNT = "/wiki/openwiki/"
+WIKI_SOURCE_MOUNT = "/wiki/raw/"
 WIKI_NOTES_MOUNT = "/wiki/notes/"
-WIKI_SOURCE_SUBDIR = "openwiki"
+WIKI_SOURCE_SUBDIR = "raw"
 WIKI_NOTES_SUBDIR = "notes"
 
 # Chosen by measurement, not preference: of the open-weight endpoints served
@@ -100,7 +100,7 @@ def wiki_routes(client: Optional[Any] = None) -> dict[str, Any]:
 
     Both tiers are subdirectories of a single Volume, reached with the same
     Jakarta credentials as the SQL tools. The grant is therefore uniform and
-    read-only on `/wiki/openwiki/` is *not* enforced by it — a UC volume grant
+    read-only on `/wiki/raw/` is *not* enforced by it — a UC volume grant
     is per-volume, not per-path. The deny rule in `filesystem_permissions()` is
     what refuses the write, which makes that rule load-bearing rather than
     defence in depth.
@@ -160,7 +160,7 @@ def build_backend(wiki_client: Optional[Any] = None) -> CompositeBackend:
 
         /                  turn-scoped scratch, discarded with the thread
         /skills/           read-only, from the repository, changes only by merge
-        /wiki/openwiki/    read-only, synced from OpenWiki, an OKF bundle
+        /wiki/raw/    read-only, synced from OpenWiki, an OKF bundle
         /wiki/notes/       durable, agent-written, shared across users
 
     The default is state rather than local disk on purpose. An agent writing
@@ -194,7 +194,7 @@ def filesystem_permissions() -> list[FilesystemPermission]:
     well as against an agent's own initiative — which is the point of keeping
     skills in the repository, where a change to them has to pass review.
 
-    The same rule covers `/wiki/openwiki/` for a different reason. Content a
+    The same rule covers `/wiki/raw/` for a different reason. Content a
     person authored in an internal system should change in that system, not
     through the agent. Here the rule is the *only* thing enforcing that: the
     Volume grant covers both subdirectories, so a gap in this list is a
@@ -230,27 +230,7 @@ async def init_agent(flag_pii: bool = True):
 
     middlewares = [TodoListMiddleware()]
     if flag_pii:
-        # Pseudonymise staff addresses *before the model sees them*.
-        #
-        # `apply_to_tool_results` is the load-bearing setting, and it has to be
-        # this rather than an output-side rewrite. Both routes serve from
-        # `astream(stream_mode=["updates", "messages"])`, so the answer is
-        # already going out token by token on the `messages` channel before
-        # `after_model` could rewrite it — an output-only net passes every unit
-        # test, works under `ainvoke`, and protects no served request. That is
-        # not hypothetical; it is what shipped in 791e711 and leaked. Only
-        # `before_model` is genuinely upstream of generation: a model that
-        # never receives an address cannot emit one.
-        #
-        # `hash` rather than `redact` because `redact` collapses every identity
-        # to one token, and the agent has to group by identity to find how
-        # concentrated closures are. A digest keeps people distinct while
-        # identifying nobody. The digest is over the raw value, so the hero's
-        # six spellings hash six ways and the planted D5 defect still bites an
-        # agent that aggregates without normalising first.
-        #
-        # No `PIIMiddleware("url", ...)`: the OKF `sources:` URLs are the
-        # citations the format rule requires the agent to reproduce.
+        # Upstream of generation: a streamed answer is gone before `after_model`.
         middlewares.append(
             PIIMiddleware(
                 "email",

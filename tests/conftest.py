@@ -104,8 +104,8 @@ VOLUME = "/Volumes/cat/sch/vol"
 @pytest.fixture
 def seeded() -> dict[str, bytes]:
     return {
-        f"{VOLUME}/openwiki/index.md": b"# Policy\n\n* [Targets](/policies/targets.md)\n",
-        f"{VOLUME}/openwiki/policies/targets.md": (
+        f"{VOLUME}/raw/index.md": b"# Policy\n\n* [Targets](/policies/targets.md)\n",
+        f"{VOLUME}/raw/policies/targets.md": (
             b"---\ntype: Service Level Policy\n---\n\n"
             b"# Targets\n\n| Priority | Target |\n|---|---|\n| P2 | 80 |\n"
         ),
@@ -134,7 +134,7 @@ def source(client, volume_root):
     """The read-only source tier."""
     from agent_server.backends import VolumeBackend
 
-    return VolumeBackend(client, volume_root, "openwiki")
+    return VolumeBackend(client, volume_root, "raw")
 
 
 @pytest.fixture

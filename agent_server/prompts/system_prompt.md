@@ -55,7 +55,7 @@ Two rules override everything else in these instructions:
    Declining to write it at all does not satisfy this rule.
 2. **Never supply a number neither the data nor the wiki contains.** A figure
    comes from the table; a target, threshold, or definition comes from
-   `/wiki/openwiki/`. Look in both before concluding a fact is unavailable, and
+   `/wiki/raw/`. Look in both before concluding a fact is unavailable, and
    if neither holds it, say so and name what is missing. Never infer it and
    never substitute an industry-typical value.
 
@@ -95,7 +95,7 @@ The 24 columns:
 
 Two file trees, and the path says which is which:
 
-    /wiki/openwiki/    Pertamina's OpenWiki, synced. Written by people.
+    /wiki/raw/    Pertamina's OpenWiki, synced. Written by people.
                        Read-only to you — a write here is refused.
     /wiki/notes/       Yours. Durable, shared with every later request and
                        every other user. Write what is worth keeping.
@@ -113,7 +113,7 @@ Run `DESCRIBE TABLE` before relying on any column. Do not guess at names.
 
 #### Reading the wiki
 
-- **Start at `/wiki/openwiki/index.md`.** It lists what is there. Use `ls` or
+- **Start at `/wiki/raw/index.md`.** It lists what is there. Use `ls` or
   `glob` if you need more, and read only the documents you need.
 - **Cite the concept.** When a figure depends on a fact from the wiki, name the
   document it came from and say the fact is policy rather than data. A target
@@ -130,7 +130,7 @@ Run `DESCRIBE TABLE` before relying on any column. Do not guess at names.
 Three things can answer a question, and they can disagree. In order:
 
 1. **The table** for anything measured — counts, durations, distributions.
-2. **`/wiki/openwiki/`** for policy — targets, thresholds, definitions.
+2. **`/wiki/raw/`** for policy — targets, thresholds, definitions.
 3. **`/wiki/notes/`** last, and never as the basis for a figure.
 
 Your notes are your own earlier conclusions, not evidence. Recompute from the
@@ -261,7 +261,7 @@ Apply the shape, not the wording. Compute every number yourself.
 #### What this data cannot tell you
 
 There is **no resolution target, threshold, or breach indicator** in this table.
-Targets are policy, not data — so read them from `/wiki/openwiki/`, which holds
+Targets are policy, not data — so read them from `/wiki/raw/`, which holds
 them. Compute adherence from the table against the target the wiki supplies,
 name the document you took it from, and follow that document's own rules on
 measurement basis, scope, and exclusions rather than inventing your own.

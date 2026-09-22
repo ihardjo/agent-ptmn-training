@@ -74,7 +74,7 @@ EXPECTATIONS_VERSION = "v3"
 DATASET_DESCRIPTION = (
     f"[expectations {EXPECTATIONS_VERSION}] Behaviour of the Pertamina "
     f"workshop delivery agent over {TABLE} and the "
-    "OKF wiki bundle on /wiki/openwiki/. 27 items whose expected values are "
+    "OKF wiki bundle on /wiki/raw/. 27 items whose expected values are "
     "derived from the table and carry the query that recomputes them. "
     "Questions neither source can answer expect a refusal that names the "
     "missing fact. "
@@ -172,7 +172,7 @@ ITEMS: list[dict] = [
 
     # ── the target comes from the wiki, not the data (v2: answerable) ─────────
     # These three expected a refusal at v1, when no target existed anywhere.
-    # `/wiki/openwiki/policies/resolution-targets.md` now supplies one, so the
+    # `/wiki/raw/policies/resolution-targets.md` now supplies one, so the
     # correct answer is a figure — and `requires_wiki_read` asks the further
     # question the figure alone cannot: was the target read, or guessed?
     #
