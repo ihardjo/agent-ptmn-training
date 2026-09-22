@@ -209,61 +209,12 @@ def filesystem_permissions() -> list[FilesystemPermission]:
     ]
 
 
-def output_redaction() -> PIIMiddleware:
-    """Pseudonymise staff addresses *before the model sees them*.
-
-    **Why upstream and not on the way out.** Redacting the answer does not work
-    on this transport. `after_model` rewrites the message in graph state, but
-    both routes serve from `astream(stream_mode=["updates", "messages"])` and
-    the answer has already gone out token by token on the `messages` channel
-    before that hook runs. langchain ships a stream transformer for exactly
-    this, but it processes langgraph v3 protocol events, and legacy
-    `AIMessageChunk` tuples from `stream_mode="messages"` never reach it. An
-    output-side net therefore passes every unit test, works under `ainvoke`,
-    and protects no real request — which is precisely what happened before this
-    was rewritten.
-
-    The only point that is genuinely upstream of token generation is
-    `before_model`. If the model never receives an address it cannot emit one,
-    and that holds whatever the transport does afterwards.
-
-    **Why `hash` and not `redact`.** `redact` would collapse every identity to
-    one token, and the agent has to group by identity to find how concentrated
-    closures are — the distribution would become unreportable. A hash is
-    pseudonymous: distinct people stay distinct, so `GROUP BY assigned_to`
-    still works, while nothing that reaches the model identifies anybody.
-
-    This keeps the D5 lesson intact rather than papering over it. The digest is
-    taken over the raw value, so the hero's six spellings hash six ways: an
-    agent that aggregates without normalising still splits one person into
-    several groups and still understates the concentration, exactly as before.
-    Normalising in SQL first yields one value and therefore one digest.
-
-    Deliberately no `PIIMiddleware("url", ...)`: the OKF `sources:` URLs in
-    `/wiki/openwiki/` are the citations the format rule requires the agent to
-    reproduce, and redacting them would break traceability.
-    """
-    return PIIMiddleware(
-        "email",
-        strategy="hash",
-        # An address pasted into the question is pseudonymised on the same
-        # footing, so the model cannot echo one back.
-        apply_to_input=True,
-        # Kept on as a backstop for non-streaming callers using `ainvoke`,
-        # where `after_model` does reach the answer.
-        apply_to_output=True,
-        # The load-bearing one. This is what actually protects a served request.
-        apply_to_tool_results=True,
-    )
-
-
-async def init_agent(redact_output: bool = True):
+async def init_agent(flag_pii: bool = True):
     """Build the agent.
 
-    `redact_output=False` is for evaluation only. `after_model` *replaces* the
-    message in graph state, so a scored run with the net on would be measuring
-    the net rather than the model, and every privacy item would pass
-    unconditionally. The net is covered by unit tests instead.
+    `flag_pii=False` is for evaluation only: with the net on, a scored run
+    would be measuring the net rather than the model and every privacy item
+    would pass unconditionally. The net is covered by unit tests instead.
     """
     skills = [SKILLS_MOUNT] if _skills_present() else None
     if skills:
@@ -275,6 +226,40 @@ async def init_agent(redact_output: bool = True):
         )
     else:
         logger.info("No skills found under %s — continuing without them.", SKILLS_DIR)
+
+
+    middlewares = [TodoListMiddleware()]
+    if flag_pii:
+        # Pseudonymise staff addresses *before the model sees them*.
+        #
+        # `apply_to_tool_results` is the load-bearing setting, and it has to be
+        # this rather than an output-side rewrite. Both routes serve from
+        # `astream(stream_mode=["updates", "messages"])`, so the answer is
+        # already going out token by token on the `messages` channel before
+        # `after_model` could rewrite it — an output-only net passes every unit
+        # test, works under `ainvoke`, and protects no served request. That is
+        # not hypothetical; it is what shipped in 791e711 and leaked. Only
+        # `before_model` is genuinely upstream of generation: a model that
+        # never receives an address cannot emit one.
+        #
+        # `hash` rather than `redact` because `redact` collapses every identity
+        # to one token, and the agent has to group by identity to find how
+        # concentrated closures are. A digest keeps people distinct while
+        # identifying nobody. The digest is over the raw value, so the hero's
+        # six spellings hash six ways and the planted D5 defect still bites an
+        # agent that aggregates without normalising first.
+        #
+        # No `PIIMiddleware("url", ...)`: the OKF `sources:` URLs are the
+        # citations the format rule requires the agent to reproduce.
+        middlewares.append(
+            PIIMiddleware(
+                "email",
+                strategy="hash",
+                apply_to_input=True,
+                apply_to_output=True,
+                apply_to_tool_results=True,
+            )
+        )
 
     return create_deep_agent(
         model=ChatDatabricks(endpoint=MODEL_ENDPOINT),
@@ -295,10 +280,6 @@ async def init_agent(redact_output: bool = True):
 
         backend=build_backend(),
         permissions=filesystem_permissions(),
-        
-        middleware=(
-            [TodoListMiddleware(), output_redaction()]
-            if redact_output
-            else [TodoListMiddleware()]
-        ),
+
+        middleware=middlewares,
     )

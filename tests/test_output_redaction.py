@@ -1,29 +1,67 @@
 """Pseudonymising staff addresses before the model sees them.
 
-**Read this before changing the configuration.** An earlier version of this
-middleware ran on the way *out* (`apply_to_output` with `strategy="redact"`).
-Every test here passed, it worked under `ainvoke`, and it protected no served
-request at all: both routes stream with
-`astream(stream_mode=["updates", "messages"])`, and the answer is emitted token
-by token on the `messages` channel *before* `after_model` rewrites state.
-langchain's stream transformer would cover that, but it reads langgraph v3
-protocol events and never sees legacy `AIMessageChunk` tuples.
+**Read this before changing the configuration.** An earlier version ran on the
+way *out* (`apply_to_output` with `strategy="redact"`). Every test passed, it
+worked under `ainvoke`, and it protected no served request at all: both routes
+stream with `astream(stream_mode=["updates", "messages"])`, and the answer is
+emitted token by token on the `messages` channel *before* `after_model`
+rewrites state. langchain's stream transformer would cover that, but it reads
+langgraph v3 protocol events and never sees legacy `AIMessageChunk` tuples.
 
-The lesson is that a synthetic `AIMessage` cannot tell you whether this works.
-`before_model` is the only hook genuinely upstream of token generation, so
-`apply_to_tool_results` is what actually holds — if the model never receives an
-address it cannot emit one, whatever the transport does next.
+Two lessons are encoded here.
+
+A synthetic `AIMessage` cannot tell you whether the net works, so the
+behavioural tests below run against **the instance `init_agent` actually
+builds**, recovered by capturing what it hands to `create_deep_agent`, rather
+than a hand-written copy of the configuration that could drift from it.
+
+And the wiring is as easy to get wrong as the settings: the `flag_pii` branch
+was once inverted, so the default — every served request — silently got no
+middleware at all. `test_the_net_is_on_by_default` is the guard for that.
 """
 
 from __future__ import annotations
 
+import asyncio
+
+from langchain.agents.middleware import PIIMiddleware, TodoListMiddleware
 from langchain.messages import AIMessage, HumanMessage, ToolMessage
 
-from agent_server.agent import output_redaction
+import agent_server.agent as agent_mod
 from agent_server.privacy import identities_in
 
 HERO = "budi.santoso@pertamina.com"
 SECOND = "siti.wijaya@pertamina.com"
+
+
+def _middleware(monkeypatch, **kwargs) -> list:
+    """The middleware list `init_agent` hands to `create_deep_agent`.
+
+    Everything that would reach the network or a workspace is stubbed; the
+    point is the wiring, not the graph.
+    """
+    captured: dict = {}
+
+    def fake_create(**kw):
+        captured.update(kw)
+        return object()
+
+    async def no_tools():
+        return []
+
+    monkeypatch.setattr(agent_mod, "create_deep_agent", fake_create)
+    monkeypatch.setattr(agent_mod, "ChatDatabricks", lambda **kw: object())
+    monkeypatch.setattr(agent_mod, "build_backend", lambda *a, **kw: object())
+    monkeypatch.setattr(agent_mod, "mcp_tools", no_tools)
+    asyncio.run(agent_mod.init_agent(**kwargs))
+    return captured["middleware"]
+
+
+def _net(monkeypatch, **kwargs):
+    for m in _middleware(monkeypatch, **kwargs):
+        if isinstance(m, PIIMiddleware):
+            return m
+    return None
 
 
 def _rows(*pairs) -> str:
@@ -37,13 +75,11 @@ def _keys(content: str) -> set[str]:
             for line in content.splitlines() if line.strip()}
 
 
-# Rows are shaped like the MCP SQL tool's JSON payload. Not pipe-delimited on
-# purpose: langchain's built-in email pattern ends `[A-Z|a-z]{2,}`, a character
-# class that literally contains a pipe, so a `|` immediately after the TLD is
-# swallowed into the match. Harmless here because real results are JSON, but it
-# will quietly mangle a row if anyone switches the separator. See
+# Rows are JSON, not pipe-delimited, on purpose: langchain's built-in email
+# pattern ends `[A-Z|a-z]{2,}`, a character class that literally contains a
+# pipe, so a `|` immediately after the TLD is swallowed into the match. See
 # `test_a_pipe_separator_is_swallowed_upstream`.
-def _tool_state(rows: str):
+def _tool_state(rows: str) -> dict:
     return {
         "messages": [
             AIMessage(content="", tool_calls=[{"name": "sql", "args": {}, "id": "1"}]),
@@ -52,73 +88,100 @@ def _tool_state(rows: str):
     }
 
 
+# ── the wiring ───────────────────────────────────────────────────────────────
+
+
+def test_the_net_is_on_by_default(monkeypatch):
+    """Every served request takes this path — `routes.py` calls `init_agent()`
+    with no arguments. An inverted branch here leaves production unprotected
+    while every other test still passes."""
+    assert _net(monkeypatch) is not None
+
+
+def test_the_net_is_off_for_evaluation(monkeypatch):
+    """With it on, `no_pii_leak` would score the net instead of the model."""
+    assert _net(monkeypatch, flag_pii=False) is None
+
+
+def test_planning_survives_either_way(monkeypatch):
+    for kwargs in ({}, {"flag_pii": False}):
+        assert any(isinstance(m, TodoListMiddleware)
+                   for m in _middleware(monkeypatch, **kwargs)), kwargs
+
+
 # ── the configuration ────────────────────────────────────────────────────────
 
 
-def test_detects_email():
-    assert output_redaction().pii_type == "email"
+def test_detects_email(monkeypatch):
+    assert _net(monkeypatch).pii_type == "email"
 
 
-def test_strategy_is_hash_not_redact():
+def test_strategy_is_hash_not_redact(monkeypatch):
     """`redact` collapses every identity to one token, which would destroy the
-    grouping the concentration finding depends on. A hash keeps people
-    distinct while identifying none of them."""
-    assert output_redaction().strategy == "hash"
+    grouping the concentration finding depends on."""
+    assert _net(monkeypatch).strategy == "hash"
 
 
-def test_tool_results_are_scrubbed():
-    """The load-bearing setting. This is the only one that protects a served
-    request; see the module docstring."""
-    assert output_redaction().apply_to_tool_results is True
+def test_tool_results_are_scrubbed(monkeypatch):
+    """The load-bearing setting; see the module docstring."""
+    assert _net(monkeypatch).apply_to_tool_results is True
 
 
-def test_input_is_scrubbed():
-    assert output_redaction().apply_to_input is True
+def test_input_is_scrubbed(monkeypatch):
+    assert _net(monkeypatch).apply_to_input is True
 
 
-def test_output_is_still_scrubbed_as_a_backstop():
-    """Reaches non-streaming `ainvoke` callers, where `after_model` does apply."""
-    assert output_redaction().apply_to_output is True
+def test_output_is_still_scrubbed_as_a_backstop(monkeypatch):
+    """Reaches non-streaming `ainvoke` callers, where `after_model` applies."""
+    assert _net(monkeypatch).apply_to_output is True
+
+
+def test_url_detection_is_not_enabled(monkeypatch):
+    """The OKF `sources:` URLs are citations the format rule requires.
+
+    A regression guard: it fails the moment url detection is added.
+    """
+    assert all(m.pii_type != "url" for m in _middleware(monkeypatch)
+               if isinstance(m, PIIMiddleware))
 
 
 # ── what the model receives ──────────────────────────────────────────────────
 
 
-def test_an_address_never_reaches_the_model():
-    state = _tool_state(_rows((HERO, 701), (SECOND, 54)))
-    out = output_redaction().before_model(state, None)
+def test_an_address_never_reaches_the_model(monkeypatch):
+    out = _net(monkeypatch).before_model(
+        _tool_state(_rows((HERO, 701), (SECOND, 54))), None)
     assert out is not None, "tool results must be rewritten before the model call"
     scrubbed = out["messages"][-1].content
     assert identities_in(scrubbed) == []
     assert "@pertamina.com" not in scrubbed
 
 
-def test_distinct_people_stay_distinct():
+def test_distinct_people_stay_distinct(monkeypatch):
     """The property `hash` buys over `redact`: grouping survives."""
-    out = output_redaction().before_model(_tool_state(_rows((HERO, 701), (SECOND, 54))), None)
-    keys = _keys(out["messages"][-1].content)
-    assert len(keys) == 2, "two people must not collapse into one group"
+    out = _net(monkeypatch).before_model(
+        _tool_state(_rows((HERO, 701), (SECOND, 54))), None)
+    assert len(_keys(out["messages"][-1].content)) == 2
 
 
-def test_the_same_person_hashes_the_same_way():
-    out = output_redaction().before_model(_tool_state(_rows((HERO, 1), (HERO, 2))), None)
+def test_the_same_person_hashes_the_same_way(monkeypatch):
+    out = _net(monkeypatch).before_model(_tool_state(_rows((HERO, 1), (HERO, 2))), None)
     assert len(_keys(out["messages"][-1].content)) == 1, "one person must not split"
 
 
-def test_the_d5_lesson_survives():
+def test_the_d5_lesson_survives(monkeypatch):
     """The digest is over the raw value, so an un-normalised aggregation still
     splits the hero across spellings and still understates the concentration —
     the planted defect is not quietly repaired by the middleware."""
-    out = output_redaction().before_model(_tool_state(_rows(
-        (HERO, 1), (HERO.upper(), 1), (HERO.strip(), 1),
-        ("Budi.Santoso@pertamina.com", 1))), None)
+    out = _net(monkeypatch).before_model(_tool_state(_rows(
+        (HERO, 1), (HERO.upper(), 1), ("Budi.Santoso@pertamina.com", 1))), None)
     assert len(_keys(out["messages"][-1].content)) > 1, \
         "normalising for the agent would delete the D5 lesson"
 
 
-def test_an_address_in_the_question_is_scrubbed():
-    state = {"messages": [HumanMessage(content=f"Berapa tiket ditutup {HERO}?")]}
-    out = output_redaction().before_model(state, None)
+def test_an_address_in_the_question_is_scrubbed(monkeypatch):
+    out = _net(monkeypatch).before_model(
+        {"messages": [HumanMessage(content=f"Berapa tiket ditutup {HERO}?")]}, None)
     assert out is not None
     assert identities_in(out["messages"][-1].content) == []
 
@@ -126,36 +189,26 @@ def test_an_address_in_the_question_is_scrubbed():
 # ── the answer, for non-streaming callers ────────────────────────────────────
 
 
-def test_an_address_in_the_answer_is_scrubbed_under_ainvoke():
-    out = output_redaction().after_model(
+def test_an_address_in_the_answer_is_scrubbed_under_ainvoke(monkeypatch):
+    out = _net(monkeypatch).after_model(
         {"messages": [AIMessage(content=f"{HERO} closed 701 tickets.")]}, None)
     assert identities_in(out["messages"][-1].content) == []
     assert "701" in out["messages"][-1].content
 
 
-def test_a_ranked_answer_is_returned_unchanged():
+def test_a_ranked_answer_is_returned_unchanged(monkeypatch):
     ranked = "Peringkat 1 (tertinggi) menutup 701 tiket (23,3 %)."
-    assert output_redaction().after_model({"messages": [AIMessage(content=ranked)]}, None) is None
+    assert _net(monkeypatch).after_model(
+        {"messages": [AIMessage(content=ranked)]}, None) is None
 
 
-# ── what must never be configured ────────────────────────────────────────────
-
-
-def test_url_detection_is_not_enabled():
-    """The OKF `sources:` URLs are the citations the format rule requires.
-
-    A regression guard, not a preference: it fails the moment url detection is
-    added.
-    """
-    assert output_redaction().pii_type != "url"
-
-
-def test_a_cited_source_url_survives():
+def test_a_cited_source_url_survives(monkeypatch):
     cited = (
         "Target diambil dari `resolution-targets.md` "
         "(https://openwiki.pertamina.ai/itsm/service-level-charter-2026)."
     )
-    assert output_redaction().after_model({"messages": [AIMessage(content=cited)]}, None) is None
+    assert _net(monkeypatch).after_model(
+        {"messages": [AIMessage(content=cited)]}, None) is None
 
 
 def test_a_pipe_separator_is_swallowed_upstream():
@@ -170,6 +223,5 @@ def test_a_pipe_separator_is_swallowed_upstream():
     from langchain.agents.middleware._redaction import detect_email
 
     assert [m["value"] for m in detect_email(f"{HERO}|701")] == [f"{HERO}|"]
-    # The separators actually in use are unaffected.
     for sep in (",", '"', " ", ":"):
         assert [m["value"] for m in detect_email(f"{HERO}{sep}701")] == [HERO], sep
