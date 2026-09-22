@@ -66,49 +66,6 @@ def test_no_address_is_a_bare_person_name():
         assert not bare.match(address_for(name))
 
 
-# ── the identity vocabulary the write guard uses ─────────────────────────────
-
-
-def test_vocabulary_holds_both_forms():
-    from agent_server.privacy import identities, normalise
-
-    assert normalise("Budi Santoso") in identities()
-    assert normalise("budi.santoso@pertamina.com") in identities()
-
-
-def test_vocabulary_covers_every_person_twice():
-    from agent_server.privacy import identities
-
-    assert len(identities()) == 2 * len(ALL_NAMES)
-
-
-def test_the_address_bypass_is_closed():
-    """The exact hole the name-only vocabulary had.
-
-    `normalise` collapses whitespace but not punctuation, so `budi santoso`
-    (space) never matched `budi.santoso` (dot) and the guard passed an address
-    straight through. Enumerating the address form is what shuts it.
-    """
-    from agent_server.privacy import identities_in
-
-    assert identities_in("budi.santoso@pertamina.com closed 701 tickets")
-    assert identities_in("BUDI.SANTOSO@PERTAMINA.COM")
-    assert identities_in("  budi.santoso@pertamina.com  ")
-
-
-def test_a_ranked_finding_carries_no_identity():
-    from agent_server.privacy import identities_in
-
-    assert identities_in("Rank 1 (tertinggi) holds 23.3% of closures (701).") == []
-
-
-def test_both_forms_of_one_person_are_reported_separately():
-    from agent_server.privacy import identities_in
-
-    found = identities_in("Budi Santoso, budi.santoso@pertamina.com")
-    assert len(found) == 2
-
-
 # ── the reload path ──────────────────────────────────────────────────────────
 
 

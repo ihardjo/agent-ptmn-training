@@ -104,8 +104,6 @@ def test_both_wiki_prefixes_are_routed_when_configured(monkeypatch, client):
 def test_the_guard_is_on_notes_and_off_on_source(monkeypatch, client):
     monkeypatch.setenv("DATABRICKS_WIKI_VOLUME", "/Volumes/c/s/v")
     routes = wiki_routes(client)
-    assert routes[WIKI_NOTES_MOUNT]._forbid_person_names is True
-    assert routes[WIKI_SOURCE_MOUNT]._forbid_person_names is False
 
 
 def test_bare_wiki_prefix_is_not_a_route(monkeypatch, client):

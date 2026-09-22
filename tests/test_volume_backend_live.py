@@ -58,7 +58,6 @@ def live_notes(live_client):
         live_client,
         os.environ["DATABRICKS_WIKI_VOLUME"],
         "notes",
-        forbid_person_names=True,
     )
 
 
@@ -121,12 +120,4 @@ def test_write_read_and_delete_round_trip(live_notes):
         assert "23.4%" in live_notes.read(path).file_data["content"]
     finally:
         assert live_notes.delete(path).error is None
-    assert live_notes.read(path).error is not None
-
-
-def test_name_guard_holds_against_the_real_volume(live_notes):
-    path = f"/live-guard-{uuid.uuid4().hex[:8]}.md"
-    r = live_notes.write(path, "Budi Santoso closed 701 tickets.")
-    assert r.error is not None and "rank" in r.error
-    # and nothing was created
     assert live_notes.read(path).error is not None

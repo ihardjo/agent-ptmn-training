@@ -44,7 +44,6 @@ from deepagents.backends.utils import (
 )
 
 from agent_server.okf import ensure_conformant, is_reserved
-from agent_server.privacy import identities_in
 
 logger = logging.getLogger(__name__)
 
@@ -85,13 +84,6 @@ class VolumeBackend(BackendProtocol):
     human-authored source content and agent-written notes while a path prefix
     still states which is which.
 
-    `forbid_person_names` turns on the write-time privacy guard. It belongs on
-    the agent-writable tier: a durable file outlives the reply that prompted it
-    and is readable by users who never asked the original question, so it is the
-    wider disclosure rather than the narrower one. The flag's name predates the
-    move to addresses; it now refuses an identity in either form, name or
-    address.
-
     `okf_actor` turns on conformant-write enforcement. When set, a markdown
     document written here is given the frontmatter OKF requires before it lands,
     because the agent is a producer of this bundle and a note without a `type`
@@ -104,19 +96,16 @@ class VolumeBackend(BackendProtocol):
         volume_root: str,
         subdir: str,
         *,
-        forbid_person_names: bool = False,
         okf_actor: Optional[str] = None,
     ) -> None:
         self._client = client
         self._base = f"{volume_root.rstrip('/')}/{subdir.strip('/')}"
         self._subdir = subdir.strip("/")
-        self._forbid_person_names = forbid_person_names
         self._okf_actor = okf_actor
 
     def __repr__(self) -> str:  # pragma: no cover - diagnostics only
         return (
             f"VolumeBackend({self._base!r}, "
-            f"forbid_person_names={self._forbid_person_names}, "
             f"okf_actor={self._okf_actor!r})"
         )
 
@@ -198,9 +187,6 @@ class VolumeBackend(BackendProtocol):
         except VolumeEscapeError as exc:
             return WriteResult(error=str(exc))
         content = self._as_okf(content, file_path)
-        refusal = self._identity_guard(content, file_path)
-        if refusal:
-            return WriteResult(error=refusal)
         try:
             self._upload(target, content)
         except Exception as exc:
@@ -235,10 +221,6 @@ class VolumeBackend(BackendProtocol):
             return EditResult(error=result)
         new_content, occurrences = result
         new_content = self._as_okf(new_content, file_path)
-
-        refusal = self._identity_guard(new_content, file_path)
-        if refusal:
-            return EditResult(error=refusal)
         try:
             self._upload(target, file_data_to_string(update_file_data(existing, new_content)))
         except Exception as exc:
@@ -306,10 +288,6 @@ class VolumeBackend(BackendProtocol):
     def _as_okf(self, content: str, file_path: str) -> str:
         """Supply the frontmatter a conformant concept needs, or pass through.
 
-        Applied before the privacy guard rather than after, so the guard reads
-        exactly the bytes that would land — frontmatter included, since an actor
-        or a title could carry a name as easily as the body can.
-
         Reserved filenames are passed through untouched: `index.md` and `log.md`
         are a listing and a history, and §8/§9 say they carry no frontmatter, so
         adding some would be the conformance failure rather than the fix.
@@ -319,35 +297,6 @@ class VolumeBackend(BackendProtocol):
         if is_reserved(file_path):
             return content
         return ensure_conformant(content, actor=self._okf_actor)
-
-    def _identity_guard(self, content: str, file_path: str) -> Optional[str]:
-        """Refuse a write that would persist someone's identity.
-
-        Covers both forms the data admits: a person's name, and the corporate
-        address derived from it. An address identifies an individual as surely
-        as a name does, so letting one through because it contains no space
-        would be the whole guard defeated on a technicality.
-
-        Returned as an error rather than raised so the agent can rewrite the
-        note in aggregate form and continue, which is the behaviour the spec
-        asks for: the constraint must not be satisfiable by declining to write.
-        """
-        if not self._forbid_person_names:
-            return None
-        found = identities_in(content)
-        if not found:
-            return None
-        logger.warning(
-            "Refused a write to %s: content disclosed %d identity/identities.",
-            file_path,
-            len(found),
-        )
-        return (
-            f"Refused: this content identifies {len(found)} individual(s) — by name "
-            "or by email address — and an identity must not be written to durable "
-            "storage. Report the figure and identify people by rank "
-            "(1 (tertinggi), 2, 3) instead, then write it again."
-        )
 
     def _scan(self) -> tuple[dict[str, Any], Optional[str], bool]:
         """Every text file under this tier, as the `path -> FileData` mapping

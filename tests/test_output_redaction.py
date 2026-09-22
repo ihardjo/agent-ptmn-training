@@ -25,10 +25,20 @@ from __future__ import annotations
 import asyncio
 
 from langchain.agents.middleware import PIIMiddleware, TodoListMiddleware
+from langchain.agents.middleware._redaction import detect_email
 from langchain.messages import AIMessage, HumanMessage, ToolMessage
 
 import agent_server.agent as agent_mod
-from agent_server.privacy import identities_in
+
+
+def identities_in(text: str) -> list[str]:
+    """Addresses disclosed by `text`, detected by shape.
+
+    Was `agent_server.privacy.identities_in`, a closed vocabulary covering both
+    the name form and the address form. That module is gone, so this checks the
+    address shape only — a name in the text is no longer detected.
+    """
+    return sorted({m["value"].casefold() for m in detect_email(text)})
 
 HERO = "budi.santoso@pertamina.com"
 SECOND = "siti.wijaya@pertamina.com"

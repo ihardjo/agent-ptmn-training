@@ -139,7 +139,7 @@ def source(client, volume_root):
 
 @pytest.fixture
 def notes(client, volume_root):
-    """The agent-writable notes tier: privacy guard on, conformant writes on.
+    """The agent-writable notes tier: conformant writes on.
 
     Configured the way `agent_server.agent.wiki_routes` configures it, so a test
     cannot pass against a tier the agent never actually gets.
@@ -150,6 +150,5 @@ def notes(client, volume_root):
         client,
         volume_root,
         "notes",
-        forbid_person_names=True,
         okf_actor="agent-ptmn-training/test-model",
     )

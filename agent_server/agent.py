@@ -138,14 +138,14 @@ def wiki_routes(client: Optional[Any] = None) -> dict[str, Any]:
         return {}
     return {
         WIKI_SOURCE_MOUNT: VolumeBackend(client, volume, WIKI_SOURCE_SUBDIR),
-        # The privacy guard lives on the writable tier only. A durable file
-        # outlives the reply that prompted it and is readable by users who never
-        # asked the question, so it is the wider disclosure, not the narrower.
+        # No write-time identity guard on this tier: the check it used was
+        # removed with `agent_server/privacy.py`. Durable writes are covered
+        # only by the system prompt and, for the main agent, by the fact that
+        # `PIIMiddleware` pseudonymises identities before the model sees them.
         WIKI_NOTES_MOUNT: VolumeBackend(
             client,
             volume,
             WIKI_NOTES_SUBDIR,
-            forbid_person_names=True,
             # The write path supplies OKF frontmatter itself. Asking the prompt
             # for it would make conformance a matter of good behaviour; this
             # makes it a property of the tier.

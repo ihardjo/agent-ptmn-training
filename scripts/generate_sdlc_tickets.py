@@ -160,7 +160,9 @@ HERO = "Budi Santoso"  # F7: closures concentrate here
 # Staff appear in the table as corporate addresses, never as names. The address
 # is *derived* from the name rather than drawn independently, so the set of
 # people who exist is still stated once, by the two name tuples above —
-# `agent_server.privacy` reverses this rule to build its identity vocabulary.
+# The rule is reversible — see `address_for` — though nothing reverses it
+# today: the identity vocabulary that did was removed with
+# `agent_server/privacy.py`.
 MAIL_DOMAIN = "pertamina.com"
 
 

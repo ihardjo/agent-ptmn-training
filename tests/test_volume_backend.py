@@ -168,82 +168,6 @@ def test_non_utf8_content_is_reported_not_raised(client, source, volume_root):
     assert r.error is not None and "UTF-8" in r.error
 
 
-# ── 3.6 write-time name guard ────────────────────────────────────────────────
-
-
-def test_guard_refuses_a_name(client, notes):
-    r = notes.write("/finding.md", "Budi Santoso closed 701 tickets.")
-    assert r.error is not None and "rank" in r.error
-
-
-def test_guard_refuses_a_name_spelled_with_padding(client, notes):
-    r = notes.write("/finding.md", "budi  santoso closed 701 tickets.")
-    assert r.error is not None
-
-
-def test_guard_accepts_the_same_finding_expressed_as_a_rank(client, notes):
-    r = notes.write(
-        "/finding.md", "Rank 1 (tertinggi) accounts for 23.3% of closures (701)."
-    )
-    assert r.error is None
-
-
-def test_refused_write_does_not_reach_the_volume(client, notes, volume_root):
-    notes.write("/finding.md", "Budi Santoso closed 701 tickets.")
-    assert f"{volume_root}/notes/finding.md" not in client.files.contents
-
-
-def test_guard_covers_edit_as_well_as_write(client, notes, volume_root):
-    r = notes.edit("/existing.md", "prior note", "written by Budi Santoso")
-    assert r.error is not None
-    assert "Budi" not in client.files.contents[f"{volume_root}/notes/existing.md"].decode()
-
-
-def test_guard_is_off_on_the_source_tier(client, source, notes):
-    """The source tier is read-only by permission rule; the guard is for notes."""
-    assert source._forbid_person_names is False
-
-
-# ── the address form is an identity too ──────────────────────────────────────
-#
-# The table records people as addresses, so this is the form the agent actually
-# reads out of a query result — and the form a name-only vocabulary let through.
-
-
-def test_guard_refuses_an_address(client, notes):
-    r = notes.write("/finding.md", "budi.santoso@pertamina.com closed 701 tickets.")
-    assert r.error is not None and "rank" in r.error
-
-
-def test_guard_refuses_an_address_in_any_case(client, notes):
-    for spelling in (
-        "BUDI.SANTOSO@PERTAMINA.COM",
-        "Budi.Santoso@pertamina.com",
-        "budi.santoso@PERTAMINA.COM",
-    ):
-        r = notes.write("/finding.md", f"{spelling} closed 701 tickets.")
-        assert r.error is not None, spelling
-
-
-def test_guard_refuses_an_address_spelled_with_padding(client, notes):
-    r = notes.write("/finding.md", "closed by  budi.santoso@pertamina.com  overall.")
-    assert r.error is not None
-
-
-def test_refused_address_write_does_not_reach_the_volume(client, notes, volume_root):
-    notes.write("/finding.md", "budi.santoso@pertamina.com closed 701 tickets.")
-    assert f"{volume_root}/notes/finding.md" not in client.files.contents
-
-
-def test_guard_covers_an_address_in_frontmatter(notes, client, volume_root):
-    r = notes.write(
-        "/finding.md",
-        "---\ntype: Analysis\ntitle: review for budi.santoso@pertamina.com\n---\n\nbody\n",
-    )
-    assert r.error is not None
-    assert f"{volume_root}/notes/finding.md" not in client.files.contents
-
-
 # ── 5.3 the notes tier writes conformant OKF ─────────────────────────────────
 
 
@@ -298,18 +222,6 @@ def test_non_markdown_writes_are_left_alone(notes, client, volume_root):
 def test_the_source_tier_does_not_rewrite_content(source):
     """Only the notes tier is a producer; the source tier is a mirror."""
     assert source._okf_actor is None
-
-
-def test_the_guard_reads_the_frontmatter_too(notes, client, volume_root):
-    """A name in a title would otherwise slip past a body-only check."""
-    r = notes.write("/finding.md", "---\ntype: Analysis\ntitle: Budi Santoso review\n---\n\nbody\n")
-    assert r.error is not None
-    assert f"{volume_root}/notes/finding.md" not in client.files.contents
-
-
-# ── scan limits are reported, not hidden ─────────────────────────────────────
-
-
 def test_a_truncated_scan_says_so(client, volume_root, monkeypatch):
     """Otherwise "I stopped looking" is indistinguishable from "nothing there"."""
     import agent_server.backends as backends
