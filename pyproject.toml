@@ -36,6 +36,13 @@ dependencies = [
     # parses OKF frontmatter with it, and a document whose frontmatter cannot be
     # read is a conformance failure rather than a missing nicety.
     "pyyaml>=6.0",
+    # The `/wiki/raw/` tier accepts source documents people drop there, not only
+    # markdown the repository authored. A `.docx` is a ZIP of XML, so it has to
+    # be extracted rather than decoded; agent_server/backends.py does that on
+    # read. Unzipping and stripping tags by hand was considered and rejected —
+    # it loses table structure, which is exactly where a policy document keeps
+    # its targets.
+    "python-docx>=1.1.0",
 ]
 
 [build-system]
