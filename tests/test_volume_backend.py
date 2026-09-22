@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from deepagents.backends.utils import file_data_to_string
+
 from agent_server.backends import VolumeBackend
 
 
@@ -166,6 +168,53 @@ def test_non_utf8_content_is_reported_not_raised(client, source, volume_root):
     client.files.contents[f"{volume_root}/raw/blob.md"] = b"\xff\xfe\x00binary"
     r = source.read("/blob.md")
     assert r.error is not None and "UTF-8" in r.error
+
+
+# ── source documents that are not markdown ───────────────────────────────────
+
+
+def _sop_docx() -> bytes:
+    """A stand-in for the SOP a person drops into the tier."""
+    import io
+
+    from docx import Document
+
+    d = Document()
+    d.add_paragraph("Prosedur Layanan IT")
+    t = d.add_table(rows=2, cols=2)
+    t.cell(0, 0).text = "Prioritas"
+    t.cell(0, 1).text = "Target"
+    t.cell(1, 0).text = "P1"
+    t.cell(1, 1).text = "4 jam kerja"
+    buffer = io.BytesIO()
+    d.save(buffer)
+    return buffer.getvalue()
+
+
+def test_a_word_document_reads_as_text(client, source, volume_root):
+    """The tier holds what people put there, and people put Word files there.
+    Before extraction this returned "not UTF-8" and the document was dead
+    weight: visible in `ls`, readable nowhere."""
+    client.files.contents[f"{volume_root}/raw/policies/sop.docx"] = _sop_docx()
+    r = source.read("/policies/sop.docx")
+    assert r.error is None
+    assert "Prosedur Layanan IT" in file_data_to_string(r.file_data)
+
+
+def test_a_word_document_is_searchable(client, source, volume_root):
+    """`read` and `grep` go through the same extraction deliberately. A tier
+    where one succeeds and the other silently skips the file is worse than one
+    that refuses it twice — the agent would be told the content is not there."""
+    client.files.contents[f"{volume_root}/raw/policies/sop.docx"] = _sop_docx()
+    r = source.grep("4 jam kerja")
+    assert r.error is None
+    assert any("sop.docx" in m["path"] for m in r.matches)
+
+
+def test_a_corrupt_word_document_is_reported_not_raised(client, source, volume_root):
+    client.files.contents[f"{volume_root}/raw/policies/torn.docx"] = b"not a zip"
+    r = source.read("/policies/torn.docx")
+    assert r.error is not None and "Word document" in r.error
 
 
 # ── 5.3 the notes tier writes conformant OKF ─────────────────────────────────

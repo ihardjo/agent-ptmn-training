@@ -124,6 +124,7 @@ Run `DESCRIBE TABLE` before relying on any column. Do not guess at names.
   withhold the answer.
 - **Writing a note.** Keep a finding worth reusing, and revise or delete one you
   later find wrong. Write prose; the frontmatter is added for you.
+- **Search within a tier.** /wiki/raw/ or /wiki/notes/ — never /wiki/ itself, which holds nothing.
 
 #### Which source wins
 

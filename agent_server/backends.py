@@ -43,6 +43,7 @@ from deepagents.backends.utils import (
     update_file_data,
 )
 
+from agent_server.documents import UnreadableDocumentError, decode
 from agent_server.okf import ensure_conformant, is_reserved
 
 logger = logging.getLogger(__name__)
@@ -167,11 +168,9 @@ class VolumeBackend(BackendProtocol):
         except Exception as exc:
             return ReadResult(error=self._describe(exc, target, "read"))
         try:
-            file_data = create_file_data(raw.decode("utf-8"))
-        except UnicodeDecodeError:
-            return ReadResult(
-                error=f"File '{file_path}' is not UTF-8 text and cannot be read as a document"
-            )
+            file_data = create_file_data(decode(raw, file_path))
+        except UnreadableDocumentError as exc:
+            return ReadResult(error=str(exc))
         if _get_backend_read_file_type(file_path) != "text":
             return ReadResult(file_data=file_data)
         # `slice_read_response` clamps the window through `normalize_read_bounds`
@@ -328,12 +327,11 @@ class VolumeBackend(BackendProtocol):
                         # looking" into "there is nothing there", which is the
                         # worst answer a search can give.
                         return files, None, True
+                    agent_path = self._to_agent_path(e.path)
                     try:
                         raw = self._client.files.download(e.path).contents.read()
-                        files[self._to_agent_path(e.path)] = create_file_data(
-                            raw.decode("utf-8")
-                        )
-                    except UnicodeDecodeError:
+                        files[agent_path] = create_file_data(decode(raw, agent_path))
+                    except UnreadableDocumentError:
                         continue  # not a document; not searchable
         except Exception as exc:
             return files, self._describe(exc, self._base, "search"), False
