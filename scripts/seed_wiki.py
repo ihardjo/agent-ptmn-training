@@ -53,6 +53,19 @@ def jakarta_client() -> WorkspaceClient:
     )
 
 
+def is_document(path: Path) -> bool:
+    """Whether a seed file belongs on the Volume at all.
+
+    Hidden files are skipped. The seed is a directory on someone's laptop, so it
+    collects what laptops leave lying around — `.DS_Store` on macOS, editor and
+    VCS metadata elsewhere. Uploading those puts junk in a knowledge tier the
+    agent lists and searches, and the agent has no way to tell an artefact from
+    a document. Filtered here rather than in `.gitignore`, which keeps them out
+    of the repository but not out of `rglob`.
+    """
+    return not any(part.startswith(".") for part in path.parts)
+
+
 def remote_digest(w: WorkspaceClient, path: str) -> str | None:
     """The SHA-256 of a file already on the Volume, or None if it is not there.
 
@@ -79,7 +92,10 @@ def main() -> None:
         sys.exit(f"No seed bundle at {SEED_DIR}")
 
     base = f"{volume.rstrip('/')}/{SOURCE_SUBDIR}"
-    files = sorted(p for p in SEED_DIR.rglob("*") if p.is_file())
+    files = sorted(
+        p for p in SEED_DIR.rglob("*")
+        if p.is_file() and is_document(p.relative_to(SEED_DIR))
+    )
     if not files:
         sys.exit(f"Seed bundle at {SEED_DIR} is empty")
 
