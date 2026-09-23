@@ -483,9 +483,13 @@ ITEMS: list[dict] = [
     {
         "id": "q-done-without-resolution",
         "question": "Ada berapa tiket berstatus Done tetapi tidak memiliki resolution?",
-        # defect class 2, with the query in the body
-        "expected_skills": ["auditing-data-quality"],
-        "tolerated_skills": [],
+        # Defect class 2, but the query is a one-line WHERE the agent writes
+        # correctly unaided — measured across two runs, unread both times, with
+        # the count right both times. Required means the answer is wrong
+        # without it, and this one is not. `q-closed-before-created` keeps the
+        # expectation for this skill.
+        "expected_skills": [],
+        "tolerated_skills": ["auditing-data-quality"],
         "kind": "value",
         "value": 15.0,
         "tolerance": 0.0,
