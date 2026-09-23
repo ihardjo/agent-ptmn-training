@@ -19,7 +19,7 @@ from deepagents.backends import CompositeBackend, FilesystemBackend, StateBacken
 from deepagents.middleware.filesystem import FilesystemPermission
 
 from agent_server.backends import VolumeBackend
-from agent_server.tools import get_current_time, init_mcp_client, jakarta_workspace_client, print_hello_world
+from agent_server.tools import get_current_time, init_mcp_client, jakarta_workspace_client, days_until, roll_dice
 
 logger = logging.getLogger(__name__)
 
@@ -242,29 +242,51 @@ PROVENANCE_UNSOURCED = (
     "Jawaban di atas tidak bersandar pada data tiket."
 )
 
+# Sent to the model, never written to state. Phrased to be answerable both ways:
+# a question that needs data is sent to get it, and one that does not is sent to
+# say so, so a correct refusal is not argued out of itself.
+PROVENANCE_NUDGE = (
+    "Kamu menjawab tanpa memanggil tool apa pun pada giliran ini, jadi jawaban "
+    "itu belum bersandar pada data. Jika jawabanmu memuat angka atau pernyataan "
+    "tentang isi tabel tiket, jalankan query untuk memastikannya — jangan "
+    "mengandalkan jawaban dari giliran sebelumnya. Jika pertanyaan ini memang "
+    "tidak membutuhkan data tiket, jawab ulang dan sebutkan alasannya dalam "
+    "satu kalimat."
+)
 
-def _sql_calls_this_turn(messages: Sequence[Any]) -> int:
-    """Successful SQL results since the last thing the person said.
 
-    Scoped to the turn, not the thread, and that is the whole point. A model
-    that answers a later question from an earlier answer's figures runs no
-    query of its own — counting over the thread would credit it with the first
-    question's work and hide exactly the failure this exists to show.
+def _turn_start(messages: Sequence[Any]) -> int:
+    """Index of the last thing the person said — where this turn begins.
 
-    Counts results rather than calls so a rejected statement does not read as
-    a source.
+    Everything downstream is scoped to the turn, not the thread, and that is
+    the point. A model that answers a later question from an earlier answer's
+    figures runs no query of its own; counting over the thread would credit it
+    with the first question's work and hide the failure this exists to show.
     """
-    count = 0
-    for message in reversed(messages):
-        if isinstance(message, HumanMessage):
-            break
-        if (
-            isinstance(message, ToolMessage)
-            and message.name in SQL_TOOL_NAMES
-            and getattr(message, "status", None) != "error"
-        ):
-            count += 1
-    return count
+    for i in range(len(messages) - 1, -1, -1):
+        if isinstance(messages[i], HumanMessage):
+            return i
+    return 0
+
+
+def _sql_results(messages: Sequence[Any], start: int) -> int:
+    """Successful SQL results in this turn.
+
+    Results rather than calls, so a statement the warehouse rejected does not
+    read as a source.
+    """
+    return sum(
+        1
+        for m in messages[start:]
+        if isinstance(m, ToolMessage)
+        and m.name in SQL_TOOL_NAMES
+        and getattr(m, "status", None) != "error"
+    )
+
+
+def _used_any_tool(messages: Sequence[Any], start: int) -> bool:
+    """Whether the model reached for anything at all this turn."""
+    return any(getattr(m, "tool_calls", None) for m in messages[start:])
 
 
 def _append_note(content: Any, note: str) -> Any:
@@ -278,19 +300,33 @@ def _append_note(content: Any, note: str) -> Any:
 
 @wrap_model_call
 async def record_query_provenance(request, handler):
-    """State, under every answer, whether a query stood behind it.
+    """Send an unexamined answer back once, then state what stood behind it.
 
-    Fabrication is a property of the model, not a bug this code can remove:
-    the standing instructions already forbid supplying a figure the data does
-    not hold, and this model does it anyway. So this does not try to prevent
-    it. It reports the one thing that *is* decidable — whether a query ran —
-    and leaves the judgement to the reader.
+    Two mechanisms, and the split between them is deliberate.
 
-    Deliberately not a refusal. Deciding from the text whether a number was
-    invented means regexing digits, and `P1`, `2026` and any figure quoted
-    back from the question all trip it. Counting tool results has no false
-    positives at all.
+    **The note** reports the one thing that is decidable — whether a query ran
+    — and leaves the judgement to the reader. It is not a refusal: deciding
+    from the text whether a figure was invented means regexing digits, and
+    `P1`, `2026` and any number quoted back from the question all trip it.
+    Counting tool results has no false positives.
+
+    **The bounce** is narrower, and aimed at one failure: answering with no
+    tool call at all. That is what a model does when it answers a later
+    question from an earlier answer in the same conversation — the shape six
+    questions asked in one sitting will actually take. It is asked to look, or
+    to say why looking is unnecessary; a question that genuinely needs no data,
+    such as one the role should decline, passes on the second pass by saying so.
+
+    The bounce fires only when the turn made *no* tool call, which is also what
+    bounds it: after it, any tool call at all disqualifies the turn from being
+    bounced again, so at most one extra model call is ever spent. A turn that
+    worked but never reached SQL gets the note and no bounce — it examined
+    something, and the note already says what.
+
+    The nudge is passed to the model, not written to state, so it never reaches
+    the transcript, the next turn, or the person reading the answer.
     """
+    start = _turn_start(request.messages)
     response = await handler(request)
     messages = getattr(response, "result", None)
     if not messages:
@@ -303,7 +339,24 @@ async def record_query_provenance(request, handler):
     if not isinstance(final, AIMessage) or final.tool_calls:
         return response
 
-    ran = _sql_calls_this_turn(request.messages)
+    ran = _sql_results(request.messages, start)
+    if (
+        ran == 0
+        and not _used_any_tool(request.messages, start)
+        # Nothing to go back for when the tool is not there at all; the prompt
+        # already carries `NO_SQL_NOTICE` in that case.
+        and _mcp_unavailable is None
+    ):
+        retry = request.override(
+            messages=[*request.messages, final, HumanMessage(content=PROVENANCE_NUDGE)]
+        )
+        response = await handler(retry)
+        messages = getattr(response, "result", None) or [final]
+        final = messages[-1]
+        if not isinstance(final, AIMessage) or final.tool_calls:
+            return response
+        ran = _sql_results(request.messages, start)
+
     note = PROVENANCE_SOURCED.format(n=ran) if ran else PROVENANCE_UNSOURCED
     final.content = _append_note(final.content, note)
     return response
@@ -523,8 +576,8 @@ async def init_agent(flag_pii: bool = True, show_provenance: bool = True):
             # 1. get_current_time()
             get_current_time,
 
-            # 2. print_hello_world()
-            print_hello_world,
+            # 2. days_until()
+            days_until,
 
             # 3. Databricks Managed MCP: SQL
             # in bulk — everything this server offers

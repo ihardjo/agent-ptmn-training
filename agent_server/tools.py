@@ -1,6 +1,7 @@
 import logging
 import os
 from typing import Optional
+import random
 
 from datetime import datetime, timezone
 from langchain_core.tools import tool
@@ -19,9 +20,18 @@ def get_current_time() -> str:
 
 
 @tool
-def print_hello_world() -> str:
-    """Return a fixed greeting. A demonstration tool that takes no arguments."""
-    return "Hello, world!"
+def days_until(iso_date: str) -> int:
+    """Whole days from today until the given date, negative if it has passed.
+
+    `iso_date` is YYYY-MM-DD. Use this rather than counting by hand."""
+    target = datetime.fromisoformat(iso_date).date()
+    return (target - datetime.now(timezone.utc).date()).days
+
+
+@tool
+def roll_dice(sides: int = 6) -> int:
+    """Roll a die with the given number of sides."""
+    return random.randint(1, sides)
 
 
 def jakarta_workspace_client() -> Optional[WorkspaceClient]:
