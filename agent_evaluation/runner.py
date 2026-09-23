@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import pathlib
 import re
@@ -64,7 +65,7 @@ def _langfuse():
 # Filtering on the argument's shape was considered and rejected: SQL is just
 # text, so any heuristic both admits prose that looks like SQL and rejects SQL
 # that does not.
-SQL_TOOLS = frozenset({"execute_sql", "execute_sql_read_only", "poll_sql_result"})
+SQL_TOOLS = frozenset({"execute_sql", "poll_sql_result"})
 
 # The filesystem tools, split by what they tell the evaluation. Reads say the
 # agent consulted the wiki rather than inventing a policy fact; writes to the
@@ -157,7 +158,7 @@ async def _ask(question: str) -> dict:
     # model sees them, so scoring a run with it on would measure the net rather
     # than the model and `no_pii_leak` would return 1.0 for every item. The net
     # is covered by `tests/test_output_redaction.py` instead.
-    agent = await init_agent(flag_pii=False)
+    agent = await init_agent(flag_pii=False, show_provenance=False)
     # Same gate as the serving layer: an unset host resolves to Langfuse cloud
     # inside the SDK, so keys without a host would ship prompts off-premises.
     host = os.environ.get("LANGFUSE_BASE_URL") or os.environ.get("LANGFUSE_HOST")
@@ -244,6 +245,25 @@ async def _ask(question: str) -> dict:
     }
 
 
+def _describe(exc: BaseException, depth: int = 0) -> str:
+    """An exception's cause, including the ones an `ExceptionGroup` hides.
+
+    `run_experiment` drives tasks inside a `TaskGroup`, so a failure arrives
+    wrapped and `str()` on the group names only how many were swallowed, never
+    which — "unhandled errors in a TaskGroup (1 sub-exception)" is the whole
+    message. The sub-exception is the entire diagnostic value, and two items a
+    run were being lost to it.
+    """
+    text = f"{type(exc).__name__}: {exc}"
+    if depth >= 3:
+        return text
+    if subs := getattr(exc, "exceptions", None):
+        text += " -> " + "; ".join(_describe(e, depth + 1) for e in subs)
+    elif exc.__cause__ is not None:
+        text += f" (caused by {_describe(exc.__cause__, depth + 1)})"
+    return text
+
+
 async def task(*, item, **kwargs) -> dict:
     """Async because `run_experiment` drives tasks inside its own event loop —
     `asyncio.run` cannot nest, and the agent's graph is async throughout.
@@ -256,10 +276,11 @@ async def task(*, item, **kwargs) -> dict:
     try:
         return await _ask(question)
     except Exception as exc:  # noqa: BLE001 - the cause is the thing we need
-        print(f"  !! item {item.id} raised {type(exc).__name__}: {exc}"[:400])
+        detail = _describe(exc)
+        print(f"  !! item {item.id} raised {detail}"[:800])
         return {"answer": "", "statements": [], "mutated": [],
                 "wiki_reads": [], "skill_reads": [], "wiki_writes": [], "seconds": 0.0,
-                "error": f"{type(exc).__name__}: {exc}"}
+                "error": detail}
 
 
 # ── item selection ────────────────────────────────────────────────────────────
@@ -322,6 +343,16 @@ def _report(result) -> None:
 
 
 def main() -> None:
+    # Without this the agent's own logging goes nowhere, and a run that quietly
+    # loses its SQL tool or waits out a rate limit looks identical to a clean
+    # one. Those messages were written to be loud; this is what makes them
+    # audible where items are actually lost.
+    logging.basicConfig(
+        level=logging.INFO, format="  %(levelname)s %(name)s: %(message)s"
+    )
+    for noisy in ("httpx", "httpcore", "urllib3", "databricks.sdk", "mcp", "openai"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--limit", type=int, help="run only the first N items")
     ap.add_argument("--run-name", help="name this run in Langfuse")

@@ -408,6 +408,14 @@ def declined_correctly(*, input, output, expected_output, metadata=None, **kwarg
     strategy, given that a third of this dataset expects a refusal.
     """
     expected = expected_output or {}
+    # Some questions are answered correctly by declining one half and answering
+    # the other — the chronology of a ticket, where the narrative is absent but
+    # the recorded fields are not. A binary judge scores that as whichever half
+    # it read first, so the same behaviour passed and failed across runs
+    # depending on which way the item was declared. Those items say so and are
+    # scored on their required claims instead.
+    if expected.get("partial_decline"):
+        return []
     text = _answer_text(output)
     must_decline = bool(expected.get("must_decline"))
 
@@ -425,7 +433,10 @@ def declined_correctly(*, input, output, expected_output, metadata=None, **kwarg
                               comment=f"should have declined ({expected.get('missing_fact')}); {verdict['why']}")
         named = _judge(
             _CAVEAT_SYSTEM,
-            f"Required qualification: names that the data lacks "
+            # "names" here was the verb, and the judge read it as the noun —
+            # replying that the answer "does not provide any names" on an item
+            # about a poem. Stated so the sentence cannot be parsed that way.
+            f"Required qualification: the answer says what is missing, which is "
             f"{expected.get('missing_fact')}\n\nAnswer:\n{text}", "stated")
         if named["verdict"] is None:
             return Evaluation(name="declined_correctly", value=0.75,
@@ -530,8 +541,8 @@ def skill_selection(*, input, output, expected_output, metadata=None, **kwargs):
     required nor penalised, used where a description is a genuinely
     reasonable match and recovery rather than first choice is the subject.
     """
-    expected = set(expected_output.get("expected_skills") or [])
-    tolerated = set(expected_output.get("tolerated_skills") or [])
+    expected = set((expected_output or {}).get("expected_skills") or [])
+    tolerated = set((expected_output or {}).get("tolerated_skills") or [])
     read = _skills_read(output)
 
     missing = expected - read

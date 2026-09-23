@@ -114,4 +114,4 @@ def test_bare_wiki_prefix_is_not_a_route(monkeypatch, client):
     quietly landing on the Volume.
     """
     monkeypatch.setenv("DATABRICKS_WIKI_VOLUME", "/Volumes/c/s/v")
-    assert "/wiki/" not in build_backend(client).routes
+    assert "/wiki/" not in build_backend(wiki_client=client).routes
