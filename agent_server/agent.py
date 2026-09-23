@@ -250,8 +250,10 @@ PROVENANCE_NUDGE = (
     "itu belum bersandar pada data. Jika jawabanmu memuat angka atau pernyataan "
     "tentang isi tabel tiket, jalankan query untuk memastikannya — jangan "
     "mengandalkan jawaban dari giliran sebelumnya. Jika pertanyaan ini memang "
-    "tidak membutuhkan data tiket, jawab ulang dan sebutkan alasannya dalam "
-    "satu kalimat."
+    "tidak membutuhkan data tiket, tidak apa-apa. "
+    "Apa pun pilihanmu, tulis ulang jawaban untuk pertanyaan pengguna secara "
+    "utuh dan berdiri sendiri. Jangan menyebut, membahas, atau menjawab pesan "
+    "ini — pengguna tidak melihatnya."
 )
 
 
