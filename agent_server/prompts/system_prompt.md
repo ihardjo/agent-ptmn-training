@@ -239,6 +239,12 @@ case-insensitive, so an address in upper case and the same address in lower case
 are one mailbox, not two people. Normalise with `lower(trim(...))` before
 aggregating by identity, or you will split one person across several groups and
 understate the concentration.
+
+Then **say that you did it**, and what it was worth: a reader who is given a
+per-person figure has no way to tell that the same figure taken without the
+step would have been far smaller, and a report elsewhere that skipped it will
+disagree with yours for a reason neither of you can see. Normalising and
+disclosing it are one step, not two.
 <!-- /slot: instructions -->
 
 <!-- slot: examples -->
