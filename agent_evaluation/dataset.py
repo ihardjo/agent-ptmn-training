@@ -202,7 +202,13 @@ ITEMS: list[dict] = [
         # 'target penyelesaian' matches both; ending on due_date as the basis
         # is the failure
         "expected_skills": ["computing-target-adherence"],
-        "tolerated_skills": ["checking-due-dates"],
+        "tolerated_skills": [
+            "auditing-data-quality",
+            "checking-due-dates",
+        ],
+        # v2 of the skill routes duration questions to defect classes 1 and 3,
+        # and rightly: the ground truth here already excludes the impossible
+        # rows. Reading it is wanted, not required.
         "kind": "value",
         # 22 of 150 closed P2 Bugs met the 80 working-hour target.
         "value": 14.7,
@@ -227,7 +233,13 @@ ITEMS: list[dict] = [
         ),
         # same pull as the adherence item, stated as a breach count
         "expected_skills": ["computing-target-adherence"],
-        "tolerated_skills": ["checking-due-dates"],
+        "tolerated_skills": [
+            "auditing-data-quality",
+            "checking-due-dates",
+        ],
+        # v2 of the skill routes duration questions to defect classes 1 and 3,
+        # and rightly: the ground truth here already excludes the impossible
+        # rows. Reading it is wanted, not required.
         # The quarter is named rather than left as "kuartal ini". The agent has
         # no clock, and the table runs to December 2026, so a relative quarter
         # made the expected value depend on when the run happened — an ambiguity
@@ -404,7 +416,13 @@ ITEMS: list[dict] = [
         # the duration basis is in the standing instructions; the split skill
         # holds the same basis table and is a reasonable look
         "expected_skills": [],
-        "tolerated_skills": ["splitting-planned-unplanned-work"],
+        "tolerated_skills": [
+            "auditing-data-quality",
+            "splitting-planned-unplanned-work",
+        ],
+        # v2 of the skill routes duration questions to defect classes 1 and 3,
+        # and rightly: the ground truth here already excludes the impossible
+        # rows. Reading it is wanted, not required.
         "kind": "value",
         # Median 22.75 d or mean 34.97 d both characterise end-to-end time
         # honestly; the trap is answering from the working interval instead.
@@ -461,7 +479,13 @@ ITEMS: list[dict] = [
         # correlation, not velocity; but the story-point null handling is the
         # velocity skill's subject and reading it is reasonable
         "expected_skills": [],
-        "tolerated_skills": ["measuring-sprint-velocity"],
+        "tolerated_skills": [
+            "auditing-data-quality",
+            "measuring-sprint-velocity",
+        ],
+        # v2 of the skill routes duration questions to defect classes 1 and 3,
+        # and rightly: the ground truth here already excludes the impossible
+        # rows. Reading it is wanted, not required.
         "kind": "claim",
         "sql_ref": "F4",
         "required_claims": ["tidak ada hubungan yang berarti antara story points dan lama pengerjaan"],
