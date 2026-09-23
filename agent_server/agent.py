@@ -132,7 +132,7 @@ async def mcp_tools(names: Optional[Sequence[str]] = None) -> list[Any]:
                 tools = await client.get_tools()
             except Exception as exc:
                 _mcp_unavailable = (
-                    f"the jakarta-sql MCP server could not be reached "
+                    f"the dbsql MCP server could not be reached "
                     f"({type(exc).__name__})"
                 )
                 logger.error(
@@ -232,7 +232,7 @@ def stage_skills(names: Union[str, Sequence[str]]) -> Optional[Path]:
 # The SQL tools, named so a turn's answer can be traced back to whether any of
 # them actually ran. Kept beside `UNUSABLE_BUILTINS` because both describe what
 # the tool list means rather than what it contains.
-SQL_TOOL_NAMES = frozenset({"execute_sql", "execute_sql_read_only", "poll_sql_result"})
+SQL_TOOL_NAMES = frozenset({"execute_sql", "poll_sql_result"})
 
 # Edit these two lines to change what a reader sees; nothing else depends on
 # their wording.
@@ -392,6 +392,63 @@ async def hide_unusable_tools(request, handler):
     return await handler(request)
 
 
+# Backoff for a rate-limited SQL endpoint. Doubling from a second, so the three
+# waits total seven — long enough to clear a burst, short enough that a person
+# waiting on an answer does not conclude the agent has hung.
+RATE_LIMIT_BACKOFF = (1.0, 2.0, 4.0)
+
+
+def _is_rate_limited(exc: BaseException, depth: int = 0) -> bool:
+    """Whether this failure is the SQL endpoint asking to be called less often.
+
+    Matched on the response where one is attached and on the text otherwise,
+    because the exception arrives through the MCP client rather than from an
+    HTTP call this code made, and its type is not guaranteed.
+
+    Recursive because the MCP client runs its transport in a task group, so the
+    429 arrives wrapped: `str()` on the group is "unhandled errors in a
+    TaskGroup (1 sub-exception)" and says nothing about the status. Matching
+    only the outer layer is why the first version of this never fired.
+    """
+    if depth > 3:
+        return False
+    if getattr(getattr(exc, "response", None), "status_code", None) == 429:
+        return True
+    if "429" in str(exc):
+        return True
+    for inner in (*(getattr(exc, "exceptions", None) or ()), exc.__cause__):
+        if inner is not None and _is_rate_limited(inner, depth + 1):
+            return True
+    return False
+
+
+@wrap_tool_call
+async def retry_rate_limited(request, handler):
+    """Wait and retry when the SQL endpoint returns 429.
+
+    The managed MCP SQL endpoint rate-limits, and a refusal there arrives as an
+    exception that kills the whole turn: the evaluation lost roughly two items a
+    run to it, and a person asking a question would simply get nothing back. A
+    burst is transient by definition, so waiting is the correct response and the
+    only one that keeps the answer.
+
+    Deliberately narrow. Any other failure is returned untouched on the first
+    attempt, because retrying a statement the warehouse rejected would only
+    reject it again more slowly.
+    """
+    for wait in (*RATE_LIMIT_BACKOFF, None):
+        try:
+            return await handler(request)
+        except Exception as exc:  # noqa: BLE001 - re-raised unless it is a 429
+            if wait is None or not _is_rate_limited(exc):
+                raise
+            logger.warning(
+                "Rate limited on %s; retrying in %.0fs",
+                request.tool_call.get("name"), wait,
+            )
+            await asyncio.sleep(wait)
+
+
 @wrap_tool_call
 async def mark_skill_reads(request, handler):
     """Label a skill read where a person can see it, in the log and in the UI.
@@ -538,7 +595,12 @@ async def init_agent(flag_pii: bool = True, show_provenance: bool = True):
     would pass unconditionally. The net is covered by unit tests instead.
     """
 
-    middlewares = [TodoListMiddleware(), mark_skill_reads, hide_unusable_tools]
+    middlewares = [
+        TodoListMiddleware(),
+        retry_rate_limited,
+        mark_skill_reads,
+        hide_unusable_tools,
+    ]
     if show_provenance:
         # Off for scored runs: the note ends up inside the answer text, and the
         # numeric scorers read figures out of that text. The evaluation measures

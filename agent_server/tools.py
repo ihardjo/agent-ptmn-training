@@ -59,7 +59,8 @@ def jakarta_workspace_client() -> Optional[WorkspaceClient]:
 
 
 def init_mcp_client() -> Optional[DatabricksMultiServerMCPClient]:
-    """The Jakarta managed SQL MCP server, or None when it is not configured.
+    """The Jakarta managed SQL MCP server (system.ai.dbsql), 
+    or None when it is not configured.
 
     SQL is the only server: `system.ai` functions are Unity Catalog UDFs, so
     the model reaches them through `execute_sql` rather than spending tool
@@ -72,8 +73,8 @@ def init_mcp_client() -> Optional[DatabricksMultiServerMCPClient]:
     return DatabricksMultiServerMCPClient(
         [
             DatabricksMCPServer(
-                name="jakarta-sql",
-                url=f"{os.environ['DATABRICKS_JAKARTA_HOST']}/api/2.0/mcp/sql",
+                name="dbsql",
+                url=f"{os.environ['DATABRICKS_JAKARTA_HOST']}/ai-gateway/mcp-services/system.ai.dbsql",
                 workspace_client=jakarta,
                 # A statement that fails comes back as a normal result whose
                 # payload carries the error, so this only covers transport
