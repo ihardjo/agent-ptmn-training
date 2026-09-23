@@ -20,7 +20,10 @@ from deepagents.backends import CompositeBackend, FilesystemBackend, StateBacken
 from deepagents.middleware.filesystem import FilesystemPermission
 
 from agent_server.backends import VolumeBackend
-from agent_server.tools import get_current_time, init_mcp_client, jakarta_workspace_client, days_until, roll_dice # TODO 3
+from agent_server.tools import init_mcp_client, jakarta_workspace_client
+
+# TODO 3: Tool Selection (Manually Defined Tools)
+from agent_server.tools import get_current_time, days_until, roll_dice 
 
 logger = logging.getLogger(__name__)
 
@@ -652,19 +655,17 @@ async def init_agent(flag_pii: bool = True, show_provenance: bool = True):
             )
         )
 
-    # TODO 3: Tool Selection:
+    # TODO 3: Tool Selection (Databricks Managed MCP)
     # TOOLS_ALL                              every tool the SQL server offers
-    # ["execute_sql", "poll_sql_result"]     only the ones named — least privilege
+    # ["execute_sql", "poll_sql_result"]     only the ones named (EXAMPLE ONLY, not for use)
     # []                                     none; the agent cannot read the table
     #
-    # execute_sql and poll_sql_result are a pair: a slow statement returns a
-    # statement_id that only poll_sql_result can collect. Selecting the first
-    # without the second works until a query is slow, then strands the model.
-    sql_tools = await mcp_tools(TOOLS_ALL) # TODO 3
+    # Actually, execute_sql and poll_sql_result CANNOT be used alone due to a slow SQL 
+    # statement returns a statement_id that only poll_sql_result can collect.
+    sql_tools = await mcp_tools(TOOLS_ALL)
 
-    # Tell the model when it has no way to run a query — either the server is
-    # unreachable, or this run did not select `execute_sql`. If it's told nothing, it
-    # invents a figure instead of saying it cannot look.
+    # Tell the model when it has no way to run a query due to unreachable server  
+    # or this run did not select `execute_sql`, which prevents inventing figures
     no_sql = _mcp_unavailable or (
         None
         if any(getattr(t, "name", None) == "execute_sql" for t in sql_tools)
@@ -684,18 +685,16 @@ async def init_agent(flag_pii: bool = True, show_provenance: bool = True):
         model=ChatDatabricks(endpoint=MODEL_ENDPOINT),
         system_prompt=system_prompt,
         tools=[
-            # TODO 3
-            # 1. Manually Defined Tools: get_current_time, days_until, roll_dice
+            # TODO 3: Tool Selection (Manually Defined Tools)
+            # (a) Manually Defined Tools: get_current_time, days_until, roll_dice
             get_current_time,
-            # days_until,
-            # roll_dice,
 
-            # 2. Databricks Managed MCP: SQL (as defined by TODO 3)
+            # (b) Databricks Managed MCP: SQL
             *sql_tools,
 
-            # 3. Databricks Managed MCP: UC Functions
-            # least privilege function URL with specified scope
-            # /api/2.0/mcp/functions/{catalog}/{schema}/{function}
+            # (c) Databricks Managed MCP: UC Functions
+            # least privilege function URL with specified scope (EXAMPLE ONLY, not for use)
+            # /api/2.0/mcp/functions/{catalog}/{schema}/{function} 
         ],
 
         # Skills as defined by TODO 4

@@ -50,11 +50,11 @@ def jakarta_workspace_client() -> Optional[WorkspaceClient]:
         host=host,
         client_id=client_id,
         client_secret=client_secret,
-        # Pinned, not inferred. Left to its own devices the SDK walks its
-        # credential chain and picks up the ambient Databricks auth first —
-        # which mints a token for *this* workspace and sends it to Jakarta,
-        # where it comes back as "Invalid Token".
+        # Pinned to prevent SDK picking up the ambient Databricks auth, which produces
+        # invalid token for *this* workspace.
         auth_type="oauth-m2m",
+        # Pinned to prevent ambient CLI profile leaking.
+        profile="",
     )
 
 

@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import pathlib
 import re
@@ -342,6 +343,16 @@ def _report(result) -> None:
 
 
 def main() -> None:
+    # Without this the agent's own logging goes nowhere, and a run that quietly
+    # loses its SQL tool or waits out a rate limit looks identical to a clean
+    # one. Those messages were written to be loud; this is what makes them
+    # audible where items are actually lost.
+    logging.basicConfig(
+        level=logging.INFO, format="  %(levelname)s %(name)s: %(message)s"
+    )
+    for noisy in ("httpx", "httpcore", "urllib3", "databricks.sdk", "mcp", "openai"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--limit", type=int, help="run only the first N items")
     ap.add_argument("--run-name", help="name this run in Langfuse")
