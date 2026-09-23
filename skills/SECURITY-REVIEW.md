@@ -5,7 +5,8 @@ any skill is deployed, and requires that the reviewer not be the author. These
 skills were machine-authored, so the human review **is** the control, not a
 formality on top of one.
 
-Reviewed: all ten skills.
+Reviewed: all ten skills — eight at version 1, `summarising-root-causes` at
+version 1, and `auditing-data-quality` at version 2.
 Automated portion: `uv run check-skills`, which runs as preflight step 1.
 
 ## Risk tier assessment
@@ -91,17 +92,22 @@ Authored by Claude Opus 5 under `/opsx:apply`.
 **Accepted for deployment by ihardjo (the repository maintainer) on
 2026-09-23, against the ten-skill menu recorded in `REGISTRY.md`.** That menu
 supersedes the one accepted on 2026-09-21: `benchmarking-against-industry`
-withdrawn, `summarising-root-causes` added, every other skill unchanged at
-version 1. The maintainer did not author the tier, which is the separation the
-guidance requires.
+withdrawn, `summarising-root-causes` added at version 1, and
+`auditing-data-quality` revised to version 2 — its identity-normalisation
+procedure removed, since the standing instructions now require both the
+normalisation and its disclosure. The other eight are unchanged at version 1.
+The maintainer did not author the tier, which is the separation the guidance
+requires.
 
 What that acceptance covers, stated precisely so a later auditor is not
 misled: the maintainer was given the menu's contents, the distractor
 mechanism, the two rejected designs and the risk indicator each triggered, the
 conformance results, and the selection measurement — and directed that the
 change be completed and deployed. It is an informed acceptance decision by a
-second party. It is **not** a line-by-line reading of all ten bodies, and this
-document does not claim to be one.
+second party. The two bodies that changed in this revision —
+`summarising-root-causes` and `auditing-data-quality` v2 — were read in full
+by the maintainer before acceptance. The remaining eight were not re-read
+line by line at this acceptance, and this document does not claim they were.
 
 The automated portion — `uv run check-skills`, running as preflight step 1 —
 covers the mechanical indicators in the table above on every run, and is what

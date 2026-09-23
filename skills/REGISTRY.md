@@ -12,7 +12,7 @@ what the column is for.
 | Skill | Purpose | Owner | Version | Dependencies | Evaluation status |
 |---|---|---|---|---|---|
 | `computing-target-adherence` | Adherence and breach counts, joining the table to wiki-held targets | ihardjo | 1 | `/wiki/raw/policies/resolution-targets.md`, `/wiki/raw/policies/breach-counting.md`, `/wiki/raw/definitions/duration-basis.md`; columns `cycle_time_hours`, `ticket_type`, `priority`, `closed_at`, `started_at` | not yet evaluated — task 5.4 |
-| `auditing-data-quality` | The five planted defect classes and their detecting queries | ihardjo | 1 | columns `created_at`, `closed_at`, `status`, `status_category`, `resolution`, `cycle_time_hours`, `assigned_to` | not yet evaluated — task 5.4 |
+| `auditing-data-quality` | Which of the table's known defects bear on the question, and what each does to the figure | ihardjo | 2 | columns `created_at`, `closed_at`, `status`, `status_category`, `resolution`, `cycle_time_hours` | not yet evaluated — task 5.4 |
 | `splitting-planned-unplanned-work` | Planned versus unplanned effort split | ihardjo | 1 | columns `ticket_type`, `sprint`, `Time Spent (hours)`, `cycle_time_hours` | not yet evaluated — task 5.4 |
 | `measuring-sprint-velocity` | Story points per sprint, and the null-coverage problem | ihardjo | 1 | columns `story_points`, `sprint`, `status_category` | not yet evaluated — task 5.4 |
 | `summarising-root-causes` | Root-cause distribution: the population the field applies to, and whether any cause beats an even split | ihardjo | 1 | column `Custom Field (Root Cause)`, `ticket_type` | not yet evaluated — task 5.4 |
