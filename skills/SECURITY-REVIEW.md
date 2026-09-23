@@ -78,7 +78,7 @@ rather than an omission.
 ## Model coverage deviation
 
 The guidance asks for testing across Haiku, Sonnet and Opus. This agent does
-not run on a Claude model: the agent is `databricks-qwen35-122b-a10b` and the
+not run on a Claude model: the agent is `databricks-glm-5-3-flash` and the
 evaluation judge is `gpt-oss-120b`. The requirement is satisfied in intent —
 test on the models actually deployed — and the selection set was run against
 the deployed agent model. Recorded so the deviation is deliberate rather than

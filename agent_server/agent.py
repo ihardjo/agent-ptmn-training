@@ -6,7 +6,13 @@ import tempfile
 from pathlib import Path
 from typing import Any, Optional, Sequence, Union
 
-from langchain.agents.middleware import PIIMiddleware, TodoListMiddleware, wrap_tool_call
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain.agents.middleware import (
+    PIIMiddleware,
+    TodoListMiddleware,
+    wrap_model_call,
+    wrap_tool_call,
+)
 from databricks_langchain import ChatDatabricks
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend
@@ -20,6 +26,28 @@ logger = logging.getLogger(__name__)
 # Kept as prose in its own file so the agent's instructions can be edited and
 # reviewed without touching Python. Read once at import, as a constant would be.
 SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "system_prompt.md").read_text()
+
+# Appended to the prompt for the length of a run that has no SQL tool. Losing
+# the tool is not the dangerous part; answering anyway is. Without this the
+# model reads its own instruction to query the table, finds nothing that can,
+# and improvises — inventing tool names, delegating to a subagent that cannot
+# help either, and sometimes producing a figure that looks measured. Telling it
+# plainly that the tool is gone turns that into one honest sentence.
+NO_SQL_NOTICE = """
+
+# This run has no SQL tool
+
+The Databricks SQL tool could not be offered for this run: {reason}
+
+You therefore cannot read the ticket table at all, and nothing else in your
+tool list can substitute for it — `execute` has no backend here, and a subagent
+has no tools you lack. No skill can supply the data either; a skill carries
+method, not figures.
+
+Say that the ticket data is unreachable for this run, name the reason above,
+and stop. Do not estimate, do not reason from a figure given earlier in the
+conversation, and do not present anything as measured.
+"""
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = REPO_ROOT / "skills"
@@ -35,7 +63,7 @@ WIKI_NOTES_SUBDIR = "notes"
 # Chosen by measurement, not preference: of the open-weight endpoints served
 # here, this is the one that actually uses the planning tool. See design
 # Decision 9 of `migrate-to-deep-agent`.
-MODEL_ENDPOINT = "databricks-qwen35-122b-a10b" # TODO: 1. LLM Selection
+MODEL_ENDPOINT = "databricks-glm-5-3-flash" # TODO: 1. LLM Selection
 
 # OKF §7 actor convention: `<producer>/<version>` for an agent. Recorded in
 # `generated.by` on every note the agent writes, so a reader can tell which
@@ -46,6 +74,10 @@ OKF_ACTOR = f"agent-ptmn-training/{MODEL_ENDPOINT}"
 
 _mcp_tools: Optional[list[Any]] = None
 _mcp_tools_lock = asyncio.Lock()
+
+# Why the SQL tool is absent, or None while it is present. Set on every
+# resolution attempt, so a server that recovers mid-session stops warning.
+_mcp_unavailable: Optional[str] = None
 
 # Staging directories by fingerprint — the selection plus the modification
 # times of the files in it. Nothing is ever removed from here: a directory an
@@ -69,7 +101,7 @@ async def mcp_tools(names: Optional[Sequence[str]] = None) -> list[Any]:
     change under it, it keys on their contents rather than caching outright.
     See `stage_skills`.
     """
-    global _mcp_tools
+    global _mcp_tools, _mcp_unavailable
     if _mcp_tools is not None:
         return _mcp_tools
     async with _mcp_tools_lock:
@@ -78,20 +110,41 @@ async def mcp_tools(names: Optional[Sequence[str]] = None) -> list[Any]:
             # WorkspaceClient validates its config and raises on a bad or
             # missing host, so leaving it outside turned an unreachable remote
             # into a 500 from the route rather than a degraded run.
+            #
+            # Degrading is still right — an agent that cannot reach one remote
+            # should answer what it can. What was wrong was degrading *quietly*:
+            # the reason went to a log nobody was reading while the model, which
+            # is the one component that needed to know, was told nothing. Both
+            # paths now record why, and `init_agent` puts that reason in the
+            # prompt. See `NO_SQL_NOTICE`.
             try:
                 client = init_mcp_client()
                 if client is None:
+                    _mcp_unavailable = (
+                        "DATABRICKS_JAKARTA_* is not configured for this process"
+                    )
+                    logger.error(
+                        "NO SQL TOOL: %s. The agent will not be able to read the "
+                        "ticket table this run.",
+                        _mcp_unavailable,
+                    )
                     return []
                 tools = await client.get_tools()
-            except Exception:
-                logger.warning(
-                    "Could not reach the jakarta-sql MCP server. "
-                    "Continuing without its tools.",
+            except Exception as exc:
+                _mcp_unavailable = (
+                    f"the jakarta-sql MCP server could not be reached "
+                    f"({type(exc).__name__})"
+                )
+                logger.error(
+                    "NO SQL TOOL: %s. The agent will not be able to read the "
+                    "ticket table this run.",
+                    _mcp_unavailable,
                     exc_info=True,
                 )
                 return []
             logger.info("Resolved %d MCP tools: %s", len(tools), [t.name for t in tools])
             _mcp_tools = tools
+            _mcp_unavailable = None
     return _mcp_tools
 
 
@@ -174,6 +227,114 @@ def stage_skills(names: Union[str, Sequence[str]]) -> Optional[Path]:
         _staged[key] = staged
     logger.info("Skills mounted (%d): %s", len(selected), selected)
     return staged
+
+
+# The SQL tools, named so a turn's answer can be traced back to whether any of
+# them actually ran. Kept beside `UNUSABLE_BUILTINS` because both describe what
+# the tool list means rather than what it contains.
+SQL_TOOL_NAMES = frozenset({"execute_sql", "execute_sql_read_only", "poll_sql_result"})
+
+# Edit these two lines to change what a reader sees; nothing else depends on
+# their wording.
+PROVENANCE_SOURCED = "\n\n— Sumber: {n} query SQL dijalankan pada giliran ini."
+PROVENANCE_UNSOURCED = (
+    "\n\n— ⚠ Sumber: TIDAK ADA query yang dijalankan pada giliran ini. "
+    "Jawaban di atas tidak bersandar pada data tiket."
+)
+
+
+def _sql_calls_this_turn(messages: Sequence[Any]) -> int:
+    """Successful SQL results since the last thing the person said.
+
+    Scoped to the turn, not the thread, and that is the whole point. A model
+    that answers a later question from an earlier answer's figures runs no
+    query of its own — counting over the thread would credit it with the first
+    question's work and hide exactly the failure this exists to show.
+
+    Counts results rather than calls so a rejected statement does not read as
+    a source.
+    """
+    count = 0
+    for message in reversed(messages):
+        if isinstance(message, HumanMessage):
+            break
+        if (
+            isinstance(message, ToolMessage)
+            and message.name in SQL_TOOL_NAMES
+            and getattr(message, "status", None) != "error"
+        ):
+            count += 1
+    return count
+
+
+def _append_note(content: Any, note: str) -> Any:
+    """Add a line to a message whose content may be text or a block list."""
+    if isinstance(content, str):
+        return content + note
+    if isinstance(content, list):
+        return [*content, {"type": "text", "text": note}]
+    return content
+
+
+@wrap_model_call
+async def record_query_provenance(request, handler):
+    """State, under every answer, whether a query stood behind it.
+
+    Fabrication is a property of the model, not a bug this code can remove:
+    the standing instructions already forbid supplying a figure the data does
+    not hold, and this model does it anyway. So this does not try to prevent
+    it. It reports the one thing that *is* decidable — whether a query ran —
+    and leaves the judgement to the reader.
+
+    Deliberately not a refusal. Deciding from the text whether a number was
+    invented means regexing digits, and `P1`, `2026` and any figure quoted
+    back from the question all trip it. Counting tool results has no false
+    positives at all.
+    """
+    response = await handler(request)
+    messages = getattr(response, "result", None)
+    if not messages:
+        return response
+
+    final = messages[-1]
+    # Only the turn's last message: an AIMessage carrying tool calls is still
+    # working, and a note appended there would be read back to the model as
+    # though the model had written it.
+    if not isinstance(final, AIMessage) or final.tool_calls:
+        return response
+
+    ran = _sql_calls_this_turn(request.messages)
+    note = PROVENANCE_SOURCED.format(n=ran) if ran else PROVENANCE_UNSOURCED
+    final.content = _append_note(final.content, note)
+    return response
+
+
+# Built-in tools this deployment cannot honour. `execute` needs a backend
+# implementing `SandboxBackendProtocol`, which this agent does not have, so it
+# fails every time it is called. `task` delegates to a subagent built from the
+# same tool list, so it can only return the caller's own problem restated.
+#
+# Both are reached for hardest at exactly the wrong moment: when the SQL tool
+# is missing, a model looking for a way to run a query finds two entries that
+# sound like one. Offering a tool that cannot work is worse than offering none.
+UNUSABLE_BUILTINS = frozenset({"execute", "task"})
+
+
+@wrap_model_call
+async def hide_unusable_tools(request, handler):
+    """Keep tools this deployment cannot honour out of the model's list.
+
+    Filtered at the request rather than removed at construction because the
+    built-in suite is assembled inside `create_deep_agent`; passing `tools=`
+    there is additive and never removes one.
+
+    Async for the same reason as `mark_skill_reads`: the agent is only ever
+    driven by `astream`, and a sync hook is not registered as the async one.
+    """
+    offered = [t for t in request.tools if getattr(t, "name", None) not in UNUSABLE_BUILTINS]
+    if len(offered) != len(request.tools):
+        request = request.override(tools=offered)
+    return await handler(request)
 
 
 @wrap_tool_call
@@ -314,7 +475,7 @@ def filesystem_permissions() -> list[FilesystemPermission]:
     ]
 
 
-async def init_agent(flag_pii: bool = True):
+async def init_agent(flag_pii: bool = True, show_provenance: bool = True):
     """Build the agent.
 
     `flag_pii=False` is for evaluation only: with the net on, a scored run
@@ -322,7 +483,12 @@ async def init_agent(flag_pii: bool = True):
     would pass unconditionally. The net is covered by unit tests instead.
     """
 
-    middlewares = [TodoListMiddleware(), mark_skill_reads]
+    middlewares = [TodoListMiddleware(), mark_skill_reads, hide_unusable_tools]
+    if show_provenance:
+        # Off for scored runs: the note ends up inside the answer text, and the
+        # numeric scorers read figures out of that text. The evaluation measures
+        # tool use through the trace instead, which is where it belongs.
+        middlewares.append(record_query_provenance)
     if flag_pii:
         # Upstream of generation: a streamed answer is gone before `after_model`.
         middlewares.append(
@@ -340,10 +506,17 @@ async def init_agent(flag_pii: bool = True):
     # ["skill-a", ...]    only the ones named — least privilege
     # []                  none; the agent answers from the prompt alone
     skills_root = stage_skills(SKILLS_ALL)
-    
+
+    # Resolved before the prompt is assembled, because whether the SQL tool is
+    # there changes what the agent should be told to do.
+    sql_tools = await mcp_tools()
+    system_prompt = SYSTEM_PROMPT
+    if _mcp_unavailable:
+        system_prompt += NO_SQL_NOTICE.format(reason=_mcp_unavailable)
+
     return create_deep_agent(
         model=ChatDatabricks(endpoint=MODEL_ENDPOINT),
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=system_prompt,
 
         # TODO 3: Tool Selection:
         tools=[
@@ -355,7 +528,7 @@ async def init_agent(flag_pii: bool = True):
 
             # 3. Databricks Managed MCP: SQL
             # in bulk — everything this server offers
-            *await mcp_tools(),
+            *sql_tools,
 
             # one-by-one — comment out the splat above and uncomment this:
             # *only(await mcp_tools(), ["execute_sql_read_only", "poll_sql_result"]),

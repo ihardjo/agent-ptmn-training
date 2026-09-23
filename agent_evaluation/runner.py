@@ -157,7 +157,7 @@ async def _ask(question: str) -> dict:
     # model sees them, so scoring a run with it on would measure the net rather
     # than the model and `no_pii_leak` would return 1.0 for every item. The net
     # is covered by `tests/test_output_redaction.py` instead.
-    agent = await init_agent(flag_pii=False)
+    agent = await init_agent(flag_pii=False, show_provenance=False)
     # Same gate as the serving layer: an unset host resolves to Langfuse cloud
     # inside the SDK, so keys without a host would ship prompts off-premises.
     host = os.environ.get("LANGFUSE_BASE_URL") or os.environ.get("LANGFUSE_HOST")
