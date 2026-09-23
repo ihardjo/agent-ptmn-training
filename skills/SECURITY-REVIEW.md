@@ -5,7 +5,7 @@ any skill is deployed, and requires that the reviewer not be the author. These
 skills were machine-authored, so the human review **is** the control, not a
 formality on top of one.
 
-Reviewed: all ten skills at version 1.
+Reviewed: all ten skills.
 Automated portion: `uv run check-skills`, which runs as preflight step 1.
 
 ## Risk tier assessment
@@ -25,9 +25,9 @@ Automated portion: `uv run check-skills`, which runs as preflight step 1.
 1. **All directory content read.** Ten `SKILL.md` files plus `REGISTRY.md` and
    this file. No bundled references, no scripts, no other resources.
 2. **Script behaviour matches stated purpose.** Not applicable — no scripts.
-   The SQL carried in `auditing-data-quality` and `measuring-sprint-velocity`
-   was executed against the live table and returns what the skill says it
-   returns.
+   The SQL carried in `auditing-data-quality`, `measuring-sprint-velocity` and
+   `summarising-root-causes` was executed against the live table and returns
+   what the skill says it returns.
 3. **Checked for adversarial instructions.** None found. No skill instructs
    the agent to hide activity, alter behaviour conditionally on the asker, or
    relax a safety rule. `formatting-service-review` does the opposite: it
@@ -66,8 +66,14 @@ cause it.
 The teaching value survives the rejection: a distractor competes through its
 **description**, and the failure it demonstrates is a wasted read — which is
 the *Triggering accuracy* dimension the same guidance names first. The
-surviving `benchmarking-against-industry` keeps the attracting description and
-declines honestly in its body.
+surviving distractors keep the attracting description and decline honestly in
+their bodies.
+
+A third skill on the same pattern, `benchmarking-against-industry`, was
+reviewed and admitted at version 1 and has since been **withdrawn** — not on a
+finding, but because it drew on only one evaluation item and its lesson was
+carried better elsewhere. Recorded here so its absence reads as a decision
+rather than an omission.
 
 ## Model coverage deviation
 
@@ -83,8 +89,11 @@ an omission.
 Authored by Claude Opus 5 under `/opsx:apply`.
 
 **Accepted for deployment by ihardjo (the repository maintainer) on
-2026-09-21, against version 1.** The maintainer did not author the tier, which
-is the separation the guidance requires.
+2026-09-23, against the ten-skill menu recorded in `REGISTRY.md`.** That menu
+supersedes the one accepted on 2026-09-21: `benchmarking-against-industry`
+withdrawn, `summarising-root-causes` added, every other skill unchanged at
+version 1. The maintainer did not author the tier, which is the separation the
+guidance requires.
 
 What that acceptance covers, stated precisely so a later auditor is not
 misled: the maintainer was given the menu's contents, the distractor

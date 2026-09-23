@@ -530,8 +530,8 @@ def skill_selection(*, input, output, expected_output, metadata=None, **kwargs):
     required nor penalised, used where a description is a genuinely
     reasonable match and recovery rather than first choice is the subject.
     """
-    expected = set(expected_output.get("expected_skills") or [])
-    tolerated = set(expected_output.get("tolerated_skills") or [])
+    expected = set((expected_output or {}).get("expected_skills") or [])
+    tolerated = set((expected_output or {}).get("tolerated_skills") or [])
     read = _skills_read(output)
 
     missing = expected - read

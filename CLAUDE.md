@@ -130,8 +130,8 @@ rule in `filesystem_permissions()` and **not** by the grant — treat a gap ther
 as a correctness bug. Note `/wiki/` itself is deliberately not a route: a loose
 `/wiki/x.md` falls through to scratch rather than quietly becoming durable.
 
-**The skill menu** — `/skills/` holds ten skills: five carrying real procedures
-and five deliberately over-broad *distractors*, which compete for selection and
+**The skill menu** — `/skills/` holds ten skills: six carrying real procedures
+and four deliberately over-broad *distractors*, which compete for selection and
 then redirect or decline. A distractor competes through its **description**
 only; its body is correct, so a mis-selection costs a wasted read and never a
 wrong answer. Bodies that would contradict the system prompt's safety rules are

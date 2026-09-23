@@ -56,7 +56,7 @@ def _middleware(monkeypatch, **kwargs) -> list:
         captured.update(kw)
         return object()
 
-    async def no_tools():
+    async def no_tools(*_, **__):
         return []
 
     monkeypatch.setattr(agent_mod, "create_deep_agent", fake_create)

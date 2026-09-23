@@ -2,10 +2,26 @@ import logging
 import os
 from typing import Optional
 
+from datetime import datetime, timezone
+from langchain_core.tools import tool
+
 from databricks.sdk import WorkspaceClient
 from databricks_langchain import DatabricksMCPServer, DatabricksMultiServerMCPClient
 
 logger = logging.getLogger(__name__)
+
+
+@tool
+def get_current_time() -> str:
+    """The current UTC time, ISO-8601. Use this whenever the answer depends on
+    what time it is now — you have no clock of your own."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+@tool
+def print_hello_world() -> str:
+    """Return a fixed greeting. A demonstration tool that takes no arguments."""
+    return "Hello, world!"
 
 
 def jakarta_workspace_client() -> Optional[WorkspaceClient]:

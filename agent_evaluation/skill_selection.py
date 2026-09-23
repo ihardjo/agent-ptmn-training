@@ -33,12 +33,12 @@ CORE = [
     "splitting-planned-unplanned-work",
     "measuring-sprint-velocity",
     "escalating-breaches",
+    "summarising-root-causes",
 ]
 
 DISTRACTORS = [
     "checking-due-dates",
     "explaining-ticket-history",
-    "benchmarking-against-industry",
     "ranking-squad-performance",
     "formatting-service-review",
 ]
@@ -165,6 +165,31 @@ ITEMS: list[SelectionItem] = [
        note="a trend question. The matrix routes individual breaches and "
             "explicitly does not handle trends"),
 
+    # -- summarising-root-causes ---------------------------------------------
+    _i("sel-rootcause-trigger-1",
+       "Apa penyebab utama tiket-tiket di sistem ini?",
+       "trigger", "summarising-root-causes",
+       expected=["summarising-root-causes"],
+       note="unscoped, so the population is the whole answer: the field applies "
+            "to defect work only"),
+    _i("sel-rootcause-trigger-2",
+       "Masalah mendasar apa yang paling perlu kami perbaiki duluan?",
+       "trigger", "summarising-root-causes",
+       expected=["summarising-root-causes"],
+       note="asks the leading row to carry a conclusion the flat distribution "
+            "does not support"),
+    _i("sel-rootcause-avoid",
+       "Ada berapa tiket bertipe Incident yang ditutup bulan lalu?",
+       "avoid", "summarising-root-causes",
+       note="defect work, but a count -- the root-cause column is not involved"),
+    _i("sel-rootcause-ambiguous",
+       "Kenapa tiket INFRA-10501 bisa terjadi?",
+       "ambiguous", "summarising-root-causes",
+       expected=["explaining-ticket-history"],
+       tolerated=["summarising-root-causes"],
+       note="'kenapa' plus one ticket id: the classification is a label, not a "
+            "reason, and one row has no distribution to summarise"),
+
     # -- checking-due-dates (distractor) -------------------------------------
     _i("sel-duedate-trigger",
        "Ada berapa tiket yang ditutup setelah due_date-nya?",
@@ -200,23 +225,6 @@ ITEMS: list[SelectionItem] = [
        tolerated=["explaining-ticket-history"],
        note="a single-ticket classification lookup is answerable; a narrative "
             "is not"),
-
-    # -- benchmarking-against-industry (distractor) --------------------------
-    _i("sel-benchmark-trigger",
-       "Apakah angka cycle time kami tergolong bagus dibanding perusahaan lain?",
-       "trigger", "benchmarking-against-industry",
-       expected=["benchmarking-against-industry"],
-       note="the body must decline; no comparator exists in table or wiki"),
-    _i("sel-benchmark-avoid",
-       "Berapa rata-rata cycle time tiket Bug?",
-       "avoid", "benchmarking-against-industry",
-       note="a figure with no comparison asked for"),
-    _i("sel-benchmark-ambiguous",
-       "Apakah kinerja penyelesaian tiket kami sudah cukup baik?",
-       "ambiguous", "benchmarking-against-industry", expected=[ADHERENCE],
-       tolerated=["benchmarking-against-industry"],
-       note="'cukup baik' has one defined comparator -- the wiki target -- and "
-            "no external one"),
 
     # -- ranking-squad-performance (distractor) ------------------------------
     _i("sel-squad-trigger",

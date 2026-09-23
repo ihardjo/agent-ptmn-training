@@ -1,17 +1,19 @@
 import asyncio
 import logging
 import os
+import shutil
+import tempfile
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Sequence, Union
 
+from langchain.agents.middleware import PIIMiddleware, TodoListMiddleware, wrap_tool_call
 from databricks_langchain import ChatDatabricks
-from langchain.agents.middleware import PIIMiddleware, TodoListMiddleware
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend
 from deepagents.middleware.filesystem import FilesystemPermission
 
 from agent_server.backends import VolumeBackend
-from agent_server.tools import init_mcp_client, jakarta_workspace_client
+from agent_server.tools import get_current_time, init_mcp_client, jakarta_workspace_client, print_hello_world
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +47,13 @@ OKF_ACTOR = f"agent-ptmn-training/{MODEL_ENDPOINT}"
 _mcp_tools: Optional[list[Any]] = None
 _mcp_tools_lock = asyncio.Lock()
 
+# Staging directories by fingerprint — the selection plus the modification
+# times of the files in it. Nothing is ever removed from here: a directory an
+# in-flight turn still has mounted must outlive the turn that replaced it.
+_staged: dict[tuple, Path] = {}
 
-async def mcp_tools() -> list[Any]:
+
+async def mcp_tools(names: Optional[Sequence[str]] = None) -> list[Any]:
     """MCP tools, discovered once per process.
 
     Both routes call `init_agent()` per request, and discovery is an
@@ -55,9 +62,12 @@ async def mcp_tools() -> list[Any]:
     it. A failure is not cached, so an unreachable server at startup degrades
     this run rather than the whole process.
 
-    Skill discovery is deliberately *not* cached this way. The two look like the
-    same problem and are not: this is a network call to another region, that is
-    a read of files on local disk.
+    Skill staging is cached too, but on a different key and for a different
+    reason. It looks like the same problem and is not: this is a network call
+    to another region, that is a write to local disk. What it has to avoid is
+    accumulating a copy of the tree per turn — and, because the files can
+    change under it, it keys on their contents rather than caching outright.
+    See `stage_skills`.
     """
     global _mcp_tools
     if _mcp_tools is not None:
@@ -85,14 +95,109 @@ async def mcp_tools() -> list[Any]:
     return _mcp_tools
 
 
-def _skills_present() -> bool:
-    """Whether there is a skills directory holding at least one skill.
+SKILLS_ALL = "__all__"
 
-    Checked rather than assumed: the deployed copy and a working tree are not
-    guaranteed to look alike, and an agent that cannot start because a directory
-    is missing is worse than one that starts without skills.
+
+def _fingerprint(selected: Sequence[str], available: dict[str, Path]) -> tuple:
+    """What a staged copy is a copy *of* — the selection and the files' mtimes.
+
+    Cheap enough to run per request: a stat walk over a few dozen markdown
+    files costs far less than the `copytree` it saves. Modification time rather
+    than a content hash on purpose — this exists to notice an edit between two
+    turns of a demo, not to defend against anything.
     """
-    return SKILLS_DIR.is_dir() and any(SKILLS_DIR.glob("*/SKILL.md"))
+    return tuple(
+        (
+            name,
+            max(
+                (p.stat().st_mtime_ns for p in available[name].rglob("*") if p.is_file()),
+                default=0,
+            ),
+        )
+        for name in selected
+    )
+
+
+def stage_skills(names: Union[str, Sequence[str]]) -> Optional[Path]:
+    """Copy the selected skills into a staging directory, and return it.
+
+    The skills middleware takes a *directory* and reads every skill under it,
+    so a subset cannot be expressed at the mount. Staging makes the selection
+    explicit at the call site instead, which is where a reader looks to find
+    out what the agent was given — and keeps the repository's `skills/` tree
+    the catalogue rather than the configuration.
+
+    Copying rather than symlinking: the mount resolves paths against its root,
+    and a link out of that root is the kind of thing a backend is entitled to
+    refuse. Eight markdown files cost nothing to copy.
+
+    Returns `None` when nothing is selected, which is a supported state — an
+    agent without skills answers from the standing instructions alone.
+    """
+    available = (
+        {p.parent.name: p.parent for p in SKILLS_DIR.glob("*/SKILL.md")}
+        if SKILLS_DIR.is_dir()
+        else {}
+    )
+    selected = sorted(available) if names == SKILLS_ALL else list(names)
+
+    # Loudly, at startup. A typo that silently drops a skill is a change in
+    # behaviour that no test and no log line would attribute to its cause.
+    if unknown := [n for n in selected if n not in available]:
+        raise ValueError(
+            f"No skill named {unknown} under {SKILLS_DIR}; "
+            f"available: {sorted(available)}"
+        )
+
+    if not selected:
+        logger.info("No skills selected — continuing without them.")
+        return None
+
+    # `init_agent()` runs per request, so staging unconditionally would leave a
+    # copy of the tree behind per turn. Reuse instead — but keyed on the files'
+    # modification times, not just on the selection, so that editing a
+    # `SKILL.md` reaches the next turn without restarting the server. That is
+    # what makes this tier demonstrable.
+    #
+    # A superseded directory is left on disk rather than removed. The evaluation
+    # harness runs several turns at once (`agent_evaluation/runner.py`,
+    # `--concurrency`, default 4), and each holds its directory mounted for the
+    # length of its turn; deleting the one it is reading from would fail its
+    # skill reads silently and depress the very score the run reports. Growth is
+    # therefore bounded by the number of *edits* in a session, not by traffic.
+    key = _fingerprint(selected, available)
+    staged = _staged.get(key)
+    if staged is None or not staged.is_dir():
+        staged = Path(tempfile.mkdtemp(prefix="agent-skills-"))
+        for name in selected:
+            shutil.copytree(available[name], staged / name)
+        _staged[key] = staged
+    logger.info("Skills mounted (%d): %s", len(selected), selected)
+    return staged
+
+
+@wrap_tool_call
+async def mark_skill_reads(request, handler):
+    """Label a skill read where a person can see it, in the log and in the UI.
+
+    A skill is read with `read_file`, the same tool that serves the wiki, so
+    neither the trace nor the chat UI distinguishes the two by name. The
+    prefix restores that distinction without a second tool and without a
+    frontend change: the UI renders tool output expanded by default.
+
+    Async because the agent is only ever driven by `astream`; a sync hook is
+    not registered as the async one and raises on the first tool call.
+    """
+    path = str((request.tool_call.get("args") or {}).get("file_path", ""))
+    response = await handler(request)
+    if path.startswith(SKILLS_MOUNT):
+        name = path[len(SKILLS_MOUNT):].split("/")[0]
+        logger.info(">>> SKILL SELECTED: %s", name)
+        # A handler may return a Command rather than a ToolMessage; only a
+        # message carries text to prefix.
+        if isinstance(getattr(response, "content", None), str):
+            response.content = f"[SKILL: {name}]\n{response.content}"
+    return response
 
 
 def wiki_routes(client: Optional[Any] = None) -> dict[str, Any]:
@@ -154,7 +259,7 @@ def wiki_routes(client: Optional[Any] = None) -> dict[str, Any]:
     }
 
 
-def build_backend(wiki_client: Optional[Any] = None) -> CompositeBackend:
+def build_backend(skills_root: Optional[Path] = None, wiki_client: Optional[Any] = None) -> CompositeBackend:
     """The agent's filesystem, tiered so a path prefix states a file's lifetime,
     who wrote it, and whether the agent may write there.
 
@@ -173,13 +278,13 @@ def build_backend(wiki_client: Optional[Any] = None) -> CompositeBackend:
     which of the two tiers it belongs to.
     """
     routes: dict[str, Any] = {}
-    if _skills_present():
+    if skills_root is not None:
         # virtual_mode mounts a real directory at a virtual path beneath the
         # composite. The general caution against a local-filesystem backend is
         # about agent-writable disk; this mount is read-only by the permission
         # rule in `init_agent`.
         routes[SKILLS_MOUNT] = FilesystemBackend(
-            root_dir=SKILLS_DIR, virtual_mode=True
+            root_dir=skills_root, virtual_mode=True
         )
     routes.update(wiki_routes(wiki_client))
     logger.info("Filesystem tiers: / (scratch), %s", ", ".join(sorted(routes)) or "none")
@@ -216,19 +321,8 @@ async def init_agent(flag_pii: bool = True):
     would be measuring the net rather than the model and every privacy item
     would pass unconditionally. The net is covered by unit tests instead.
     """
-    skills = [SKILLS_MOUNT] if _skills_present() else None
-    if skills:
-        logger.info(
-            "Loaded %d skill(s) from %s: %s",
-            len(list(SKILLS_DIR.glob("*/SKILL.md"))),
-            SKILLS_DIR,
-            sorted(p.parent.name for p in SKILLS_DIR.glob("*/SKILL.md")),
-        )
-    else:
-        logger.info("No skills found under %s — continuing without them.", SKILLS_DIR)
 
-
-    middlewares = [TodoListMiddleware()]
+    middlewares = [TodoListMiddleware(), mark_skill_reads]
     if flag_pii:
         # Upstream of generation: a streamed answer is gone before `after_model`.
         middlewares.append(
@@ -241,24 +335,38 @@ async def init_agent(flag_pii: bool = True):
             )
         )
 
+    # TODO 4: Skill Selection:
+    # SKILLS_ALL          every skill in skills/
+    # ["skill-a", ...]    only the ones named — least privilege
+    # []                  none; the agent answers from the prompt alone
+    skills_root = stage_skills(SKILLS_ALL)
+    
     return create_deep_agent(
         model=ChatDatabricks(endpoint=MODEL_ENDPOINT),
         system_prompt=SYSTEM_PROMPT,
 
         # TODO 3: Tool Selection:
-        # 1. get_current_time()
-        # 2. print_hello_world()
-        # 3. Databricks Managed MCP: SQL
-        # 4. Databricks Managed MCP: UC Functions
-        tools=await mcp_tools(),  # [sql, tool2, ...]
+        tools=[
+            # 1. get_current_time()
+            get_current_time,
 
-        # TODO 4: Skill Selection:
-        # 1. /skill-1
-        # 2. /skill-2
-        # 3. /...
-        skills=skills,  # [sql, tool2, ...]
+            # 2. print_hello_world()
+            print_hello_world,
 
-        backend=build_backend(),
+            # 3. Databricks Managed MCP: SQL
+            # in bulk — everything this server offers
+            *await mcp_tools(),
+
+            # one-by-one — comment out the splat above and uncomment this:
+            # *only(await mcp_tools(), ["execute_sql_read_only", "poll_sql_result"]),
+
+            # 4. Databricks Managed MCP: UC Functions
+            # least privilege function URL with specified scope
+            # /api/2.0/mcp/functions/{catalog}/{schema}/{function}
+        ],
+
+        skills=[SKILLS_MOUNT] if skills_root else None,
+        backend=build_backend(skills_root),
         permissions=filesystem_permissions(),
 
         middleware=middlewares,
