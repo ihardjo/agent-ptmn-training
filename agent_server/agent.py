@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -19,35 +20,37 @@ from deepagents.backends import CompositeBackend, FilesystemBackend, StateBacken
 from deepagents.middleware.filesystem import FilesystemPermission
 
 from agent_server.backends import VolumeBackend
-from agent_server.tools import get_current_time, init_mcp_client, jakarta_workspace_client, days_until, roll_dice
+from agent_server.tools import get_current_time, init_mcp_client, jakarta_workspace_client, days_until, roll_dice # TODO 3
 
 logger = logging.getLogger(__name__)
 
-# Kept as prose in its own file so the agent's instructions can be edited and
-# reviewed without touching Python. Read once at import, as a constant would be.
-SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "system_prompt.md").read_text()
+PROMPTS_DIR = Path(__file__).parent / "prompts"
 
-# Appended to the prompt for the length of a run that has no SQL tool. Losing
-# the tool is not the dangerous part; answering anyway is. Without this the
-# model reads its own instruction to query the table, finds nothing that can,
-# and improvises — inventing tool names, delegating to a subagent that cannot
-# help either, and sometimes producing a figure that looks measured. Telling it
-# plainly that the tool is gone turns that into one honest sentence.
-NO_SQL_NOTICE = """
 
-# This run has no SQL tool
+def _prompt(name: str) -> str:
+    """One prompt file, with its reader-facing header stripped.
 
-The Databricks SQL tool could not be offered for this run: {reason}
+    Everything the model is given is prose in `prompts/`, so that it can be
+    edited and reviewed without touching Python — and so there is one place to
+    look rather than two. A leading HTML comment in these files says when the
+    fragment applies, which is documentation for whoever opens the file and not
+    something to send, so it is removed here.
+    """
+    text = (PROMPTS_DIR / name).read_text()
+    return re.sub(r"\A(\s*<!--.*?-->\s*)+", "", text, flags=re.S)
 
-You therefore cannot read the ticket table at all, and nothing else in your
-tool list can substitute for it — `execute` has no backend here, and a subagent
-has no tools you lack. No skill can supply the data either; a skill carries
-method, not figures.
 
-Say that the ticket data is not available for this run, name the reason above,
-and stop. Do not estimate, do not reason from a figure given earlier in the
-conversation, and do not present anything as measured.
-"""
+# Read once at import, as constants would be.
+#
+# `system_prompt.md` is standing: it applies to every turn. The other two are
+# conditional and are why they are separate files rather than sections of it —
+# each is false most of the time. `no_sql_notice.md` would otherwise tell the
+# agent the table is unreachable on runs where it is not, and
+# `provenance_nudge.md` is a mid-turn reply to an answer that does not exist
+# yet when a system prompt is assembled.
+SYSTEM_PROMPT = _prompt("system_prompt.md")
+NO_SQL_NOTICE = "\n\n" + _prompt("no_sql_notice.md")
+PROVENANCE_NUDGE = _prompt("provenance_nudge.md")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = REPO_ROOT / "skills"
@@ -63,7 +66,7 @@ WIKI_NOTES_SUBDIR = "notes"
 # Chosen by measurement, not preference: of the open-weight endpoints served
 # here, this is the one that actually uses the planning tool. See design
 # Decision 9 of `migrate-to-deep-agent`.
-MODEL_ENDPOINT = "databricks-glm-5-3-flash" # TODO: 1. LLM Selection
+MODEL_ENDPOINT = "databricks-glm-5-3-flash" # TODO 1. LLM Selection
 
 # OKF §7 actor convention: `<producer>/<version>` for an agent. Recorded in
 # `generated.by` on every note the agent writes, so a reader can tell which
@@ -273,21 +276,6 @@ PROVENANCE_UNSOURCED = (
     "\n\n— ⚠ Sumber: TIDAK ADA query yang dijalankan pada giliran ini. "
     "Jawaban di atas tidak bersandar pada data tiket."
 )
-
-# Sent to the model, never written to state. Phrased to be answerable both ways:
-# a question that needs data is sent to get it, and one that does not is sent to
-# say so, so a correct refusal is not argued out of itself.
-PROVENANCE_NUDGE = (
-    "Kamu menjawab tanpa memanggil tool apa pun pada giliran ini, jadi jawaban "
-    "itu belum bersandar pada data. Jika jawabanmu memuat angka atau pernyataan "
-    "tentang isi tabel tiket, jalankan query untuk memastikannya — jangan "
-    "mengandalkan jawaban dari giliran sebelumnya. Jika pertanyaan ini memang "
-    "tidak membutuhkan data tiket, tidak apa-apa. "
-    "Apa pun pilihanmu, tulis ulang jawaban untuk pertanyaan pengguna secara "
-    "utuh dan berdiri sendiri. Jangan menyebut, membahas, atau menjawab pesan "
-    "ini — pengguna tidak melihatnya."
-)
-
 
 def _turn_start(messages: Sequence[Any]) -> int:
     """Index of the last thing the person said — where this turn begins.
@@ -672,7 +660,7 @@ async def init_agent(flag_pii: bool = True, show_provenance: bool = True):
     # execute_sql and poll_sql_result are a pair: a slow statement returns a
     # statement_id that only poll_sql_result can collect. Selecting the first
     # without the second works until a query is slow, then strands the model.
-    sql_tools = await mcp_tools(TOOLS_ALL)
+    sql_tools = await mcp_tools(TOOLS_ALL) # TODO 3
 
     # Tell the model when it has no way to run a query — either the server is
     # unreachable, or this run did not select `execute_sql`. If it's told nothing, it
@@ -696,6 +684,7 @@ async def init_agent(flag_pii: bool = True, show_provenance: bool = True):
         model=ChatDatabricks(endpoint=MODEL_ENDPOINT),
         system_prompt=system_prompt,
         tools=[
+            # TODO 3
             # 1. Manually Defined Tools: get_current_time, days_until, roll_dice
             get_current_time,
             # days_until,

@@ -1,4 +1,4 @@
-<!-- TODO: System Prompt -->
+<!-- TODO 2: System Prompt -->
 <!-- slot: objective -->
 You are a delivery data assistant for the Pertamina AI platform workshop.
 
