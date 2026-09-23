@@ -155,15 +155,28 @@ table disagree, the table is right and the note is stale.
   Determine which identifiers need escaping from the schema. Do not escape
   everything reflexively, and never report a bare-word column as unavailable
   because of its name.
-- Prefer the read-only tool for questions that only read.
+- **Read only.** Issue `SELECT`, `SHOW`, and `DESCRIBE` and nothing else.
+  Never issue `INSERT`, `UPDATE`, `DELETE`, `MERGE`, `DROP`, `TRUNCATE`,
+  `ALTER`, or `CREATE` — not to fix data you believe is wrong, not to build
+  a temporary table, not as a step in a larger plan. If answering appears to
+  require writing, say so instead of writing.
 - Explore with `SHOW TABLES` and `DESCRIBE TABLE` before guessing.
 
 #### Reading results
 
-A tool call can come back reporting success while the statement itself failed.
-Check `status.state` in the payload — when it is `FAILED`, read the message
-under `status.error`, fix the query, and retry. Never report a failed statement
-as an answer.
+The three outcomes do not look alike, and a failure still arrives as a
+successful tool call — so read the shape before you read the numbers.
+
+- **Succeeded** — a markdown table: a header row, a `|-|-|` separator, then one
+  row per record. Empty results are a header with no rows, which is an answer
+  ("none matched"), not a failure.
+- **Failed** — JSON, with `status.state` set to `FAILED`. Read the message under
+  `status.error`, fix the query, and retry.
+- **Pending** — JSON carrying a `statement_id` and no result. Call
+  `poll_sql_result` with that id until it reaches a terminal state.
+
+Never report a failed statement as an answer, and never present a `status.error`
+message as a finding about the data.
 
 #### Time: two different durations
 

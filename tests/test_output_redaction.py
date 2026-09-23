@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import asyncio
 
+import re
+
 from langchain.agents.middleware import PIIMiddleware, TodoListMiddleware
 from langchain.agents.middleware._redaction import detect_email
 from langchain.messages import AIMessage, HumanMessage, ToolMessage
@@ -37,8 +39,13 @@ def identities_in(text: str) -> list[str]:
     Was `agent_server.privacy.identities_in`, a closed vocabulary covering both
     the name form and the address form. That module is gone, so this checks the
     address shape only — a name in the text is no longer detected.
+
+    Uses the agent's own pattern, not langchain's. Checking with a different
+    pattern from the one under test is how the pipe defect survived a green
+    suite once already.
     """
-    return sorted({m["value"].casefold() for m in detect_email(text)})
+    found = re.findall(agent_mod.EMAIL_PATTERN, text)
+    return sorted({m.casefold() for m in found})
 
 HERO = "budi.santoso@pertamina.com"
 SECOND = "siti.wijaya@pertamina.com"
@@ -75,20 +82,33 @@ def _net(monkeypatch, **kwargs):
 
 
 def _rows(*pairs) -> str:
-    """Grouped rows as the SQL tool returns them: JSON, one array per row."""
-    return "\n".join(f'["{who}", {n}]' for who, n in pairs)
+    """Grouped rows as the SQL tool returns them: a markdown table.
+
+    `system.ai.dbsql` renders a successful result as markdown, not as the
+    Statement Execution envelope the previous server returned. These fixtures
+    were JSON until that migration, and the change is the whole point: a
+    pipe-delimited row is what breaks langchain's built-in pattern, so testing
+    against JSON would measure a format production no longer sees.
+    """
+    head = "|assigned_to|n|\n|-|-|"
+    return "\n".join([head, *(f"|{who}|{n}|" for who, n in pairs)])
 
 
 def _keys(content: str) -> set[str]:
-    """The identity key of each row, however it was rewritten."""
-    return {line.split('", ')[0].split('["')[-1] if '["' in line else line
-            for line in content.splitlines() if line.strip()}
+    """The identity key of each row, however it was rewritten.
+
+    The separator matters here: if a hash swallowed the `|` that follows it,
+    the row splits into fewer cells and the key comes back glued to the count —
+    which is exactly the corruption `EMAIL_PATTERN` exists to prevent.
+    """
+    keys = set()
+    for line in content.splitlines():
+        cells = [c for c in line.split("|") if c.strip()]
+        if len(cells) == 2 and cells[1].strip().isdigit():
+            keys.add(cells[0])
+    return keys
 
 
-# Rows are JSON, not pipe-delimited, on purpose: langchain's built-in email
-# pattern ends `[A-Z|a-z]{2,}`, a character class that literally contains a
-# pipe, so a `|` immediately after the TLD is swallowed into the match. See
-# `test_a_pipe_separator_is_swallowed_upstream`.
 def _tool_state(rows: str) -> dict:
     return {
         "messages": [
@@ -227,11 +247,26 @@ def test_a_pipe_separator_is_swallowed_upstream():
     The pattern ends `[A-Z|a-z]{2,}` — a character class that literally
     contains `|`, almost certainly meant as alternation. A pipe immediately
     after the TLD is therefore part of the match and disappears into the
-    digest, corrupting the row. Harmless while results are JSON; a trap if the
-    separator ever changes.
+    digest, corrupting the row.
+
+    This was filed as harmless "while results are JSON". They are not: the
+    migration to `system.ai.dbsql` made every successful result a markdown
+    table, and the trap sprang. `agent_server.agent.EMAIL_PATTERN` is the
+    answer; the test below is its guard.
     """
     from langchain.agents.middleware._redaction import detect_email
 
     assert [m["value"] for m in detect_email(f"{HERO}|701")] == [f"{HERO}|"]
     for sep in (",", '"', " ", ":"):
         assert [m["value"] for m in detect_email(f"{HERO}{sep}701")] == [HERO], sep
+
+
+def test_our_pattern_stops_at_the_pipe():
+    """The one difference from upstream, and the reason for the whole file.
+
+    A separator eaten by the match takes the next cell with it, so the same
+    person hashes two ways and the grouping `strategy="hash"` buys is lost.
+    """
+    assert re.findall(agent_mod.EMAIL_PATTERN, f"{HERO}|701") == [HERO]
+    for sep in ("|", ",", '"', " ", ":"):
+        assert re.findall(agent_mod.EMAIL_PATTERN, f"{HERO}{sep}701") == [HERO], sep

@@ -44,7 +44,7 @@ tool list can substitute for it — `execute` has no backend here, and a subagen
 has no tools you lack. No skill can supply the data either; a skill carries
 method, not figures.
 
-Say that the ticket data is unreachable for this run, name the reason above,
+Say that the ticket data is not available for this run, name the reason above,
 and stop. Do not estimate, do not reason from a figure given earlier in the
 conversation, and do not present anything as measured.
 """
@@ -72,6 +72,10 @@ MODEL_ENDPOINT = "databricks-glm-5-3-flash" # TODO: 1. LLM Selection
 OKF_ACTOR = f"agent-ptmn-training/{MODEL_ENDPOINT}"
 
 
+# Mirrors `SKILLS_ALL`. The two selection points are meant to be edited the
+# same way, so they take the same three kinds of argument.
+TOOLS_ALL = "__all__"
+
 _mcp_tools: Optional[list[Any]] = None
 _mcp_tools_lock = asyncio.Lock()
 
@@ -85,8 +89,8 @@ _mcp_unavailable: Optional[str] = None
 _staged: dict[tuple, Path] = {}
 
 
-async def mcp_tools(names: Optional[Sequence[str]] = None) -> list[Any]:
-    """MCP tools, discovered once per process.
+async def mcp_tools(names: Union[str, Sequence[str]] = TOOLS_ALL) -> list[Any]:
+    """The MCP tools this run offers the model — `names` of them, discovered once.
 
     Both routes call `init_agent()` per request, and discovery is an
     `initialize` plus `tools/list` round trip to a server in another region —
@@ -100,10 +104,15 @@ async def mcp_tools(names: Optional[Sequence[str]] = None) -> list[Any]:
     accumulating a copy of the tree per turn — and, because the files can
     change under it, it keys on their contents rather than caching outright.
     See `stage_skills`.
+
+    Selection is applied to the cached list on the way out, never before it is
+    stored. Caching the *selection* would bake the first request's choice into
+    the process — and because `init_agent()` runs per request, that only shows
+    up on the second, differing call.
     """
     global _mcp_tools, _mcp_unavailable
     if _mcp_tools is not None:
-        return _mcp_tools
+        return _select_tools(_mcp_tools, names)
     async with _mcp_tools_lock:
         if _mcp_tools is None:
             # Client construction is inside the try, not before it: building a
@@ -145,7 +154,30 @@ async def mcp_tools(names: Optional[Sequence[str]] = None) -> list[Any]:
             logger.info("Resolved %d MCP tools: %s", len(tools), [t.name for t in tools])
             _mcp_tools = tools
             _mcp_unavailable = None
-    return _mcp_tools
+    return _select_tools(_mcp_tools, names)
+
+
+def _select_tools(discovered: Sequence[Any], names: Union[str, Sequence[str]]) -> list[Any]:
+    """The named subset of what the server offers, in the order asked for.
+
+    Unknown names raise, for the reason `stage_skills` raises: a typo that
+    silently drops a tool changes the agent's behaviour with nothing in the
+    logs pointing at the cause. This runs only once the server has answered —
+    an unreachable server returns early, above, and degrades rather than
+    raising, which is the older and more important rule.
+    """
+    if names == TOOLS_ALL:
+        selected = list(discovered)
+    else:
+        available = {t.name: t for t in discovered}
+        if unknown := [n for n in names if n not in available]:
+            raise ValueError(
+                f"No MCP tool named {unknown} on the SQL server; "
+                f"available: {sorted(available)}"
+            )
+        selected = [available[n] for n in names]
+    logger.info("Tools mounted (%d): %s", len(selected), [t.name for t in selected])
+    return selected
 
 
 SKILLS_ALL = "__all__"
@@ -362,6 +394,19 @@ async def record_query_provenance(request, handler):
     note = PROVENANCE_SOURCED.format(n=ran) if ran else PROVENANCE_UNSOURCED
     final.content = _append_note(final.content, note)
     return response
+
+
+# langchain's built-in email pattern ends `[A-Z|a-z]{2,}` — a character class
+# that literally contains a pipe, almost certainly meant as alternation. A pipe
+# straight after the TLD is therefore part of the match. That was harmless while
+# the SQL server returned JSON; `system.ai.dbsql` returns markdown tables, so
+# every address now swallows its own column separator and, mid-row, the next
+# cell's value with it. The same person then hashes two ways and the grouping
+# that `strategy="hash"` exists to preserve is lost.
+#
+# Identical to the upstream pattern but for that class. See
+# `test_a_pipe_separator_is_swallowed_upstream`.
+EMAIL_PATTERN = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
 
 
 # Built-in tools this deployment cannot honour. `execute` needs a backend
@@ -612,49 +657,59 @@ async def init_agent(flag_pii: bool = True, show_provenance: bool = True):
             PIIMiddleware(
                 "email",
                 strategy="hash",
+                detector=EMAIL_PATTERN,
                 apply_to_input=True,
                 apply_to_output=True,
                 apply_to_tool_results=True,
             )
         )
 
-    # TODO 4: Skill Selection:
-    # SKILLS_ALL          every skill in skills/
-    # ["skill-a", ...]    only the ones named — least privilege
-    # []                  none; the agent answers from the prompt alone
-    skills_root = stage_skills(SKILLS_ALL)
+    # TODO 3: Tool Selection:
+    # TOOLS_ALL                              every tool the SQL server offers
+    # ["execute_sql", "poll_sql_result"]     only the ones named — least privilege
+    # []                                     none; the agent cannot read the table
+    #
+    # execute_sql and poll_sql_result are a pair: a slow statement returns a
+    # statement_id that only poll_sql_result can collect. Selecting the first
+    # without the second works until a query is slow, then strands the model.
+    sql_tools = await mcp_tools(TOOLS_ALL)
 
-    # Resolved before the prompt is assembled, because whether the SQL tool is
-    # there changes what the agent should be told to do.
-    sql_tools = await mcp_tools()
+    # Tell the model when it has no way to run a query — either the server is
+    # unreachable, or this run did not select `execute_sql`. If it's told nothing, it
+    # invents a figure instead of saying it cannot look.
+    no_sql = _mcp_unavailable or (
+        None
+        if any(getattr(t, "name", None) == "execute_sql" for t in sql_tools)
+        else "no tool that can run a query was selected for this run"
+    )
     system_prompt = SYSTEM_PROMPT
-    if _mcp_unavailable:
-        system_prompt += NO_SQL_NOTICE.format(reason=_mcp_unavailable)
+    if no_sql:
+        system_prompt += NO_SQL_NOTICE.format(reason=no_sql)
+
+    # TODO 4: Skill Selection:
+    # SKILLS_ALL            every skill in skills/
+    # ["skill-a", ...]      only the ones named — least privilege
+    # []                    none; the agent answers from the prompt alone
+    skills_root = stage_skills(SKILLS_ALL)
 
     return create_deep_agent(
         model=ChatDatabricks(endpoint=MODEL_ENDPOINT),
         system_prompt=system_prompt,
-
-        # TODO 3: Tool Selection:
         tools=[
-            # 1. get_current_time()
+            # 1. Manually Defined Tools: get_current_time, days_until, roll_dice
             get_current_time,
+            # days_until,
+            # roll_dice,
 
-            # 2. days_until()
-            days_until,
-
-            # 3. Databricks Managed MCP: SQL
-            # in bulk — everything this server offers
+            # 2. Databricks Managed MCP: SQL (as defined by TODO 3)
             *sql_tools,
 
-            # one-by-one — comment out the splat above and uncomment this:
-            # *only(await mcp_tools(), ["execute_sql_read_only", "poll_sql_result"]),
-
-            # 4. Databricks Managed MCP: UC Functions
+            # 3. Databricks Managed MCP: UC Functions
             # least privilege function URL with specified scope
             # /api/2.0/mcp/functions/{catalog}/{schema}/{function}
         ],
 
+        # Skills as defined by TODO 4
         skills=[SKILLS_MOUNT] if skills_root else None,
         backend=build_backend(skills_root),
         permissions=filesystem_permissions(),
