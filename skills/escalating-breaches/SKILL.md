@@ -11,7 +11,7 @@ of the answer, not a footnote to it.
 
 ## Read the routing; do not carry it
 
-Read `/wiki/raw/policies/escalation-matrix.md`. It gives, per breach
+Read `/wiki/notes/policies/escalation-matrix.md`. It gives, per breach
 severity, who is notified and within what time.
 
 No routing is reproduced in this skill. That is deliberate: a role written down
@@ -59,6 +59,6 @@ handled in periodic review rather than by escalation.
 > |---|---|---|---|
 > | «p» | «n» | «from the matrix» | «from the matrix» |
 >
-> - Breach determined on working time against `/wiki/raw/policies/resolution-targets.md`.
-> - Routing from `/wiki/raw/policies/escalation-matrix.md`. **This page is past its review horizon of «date» and derives from the «year» charter — confirm the routing against the current charter before acting on it.**
+> - Breach determined on working time against `/wiki/notes/policies/resolution-targets.md`.
+> - Routing from `/wiki/notes/policies/escalation-matrix.md`. **This page is past its review horizon of «date» and derives from the «year» charter — confirm the routing against the current charter before acting on it.**
 > - «X» tickets excluded as not closed, so no working time exists for them yet.

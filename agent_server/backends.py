@@ -1,4 +1,17 @@
-"""A deepagents filesystem backend over a Unity Catalog Volume.
+"""The agent's filesystem: a backend over a Unity Catalog Volume, and the
+tiers assembled from it.
+
+Two things live here because one is only ever used by the other. `VolumeBackend`
+is the adapter — how a Volume is read and written at all. Below it,
+`wiki_routes`, `build_backend` and `filesystem_permissions` are the composition:
+which prefixes exist, what each one means, and which of them the agent may
+write to.
+
+`VolumeBackend` first, then the tiers, since the tiers are built out of it.
+
+## The adapter
+
+A deepagents filesystem backend over a Unity Catalog Volume.
 
 Databricks Apps deploy the repository to local disk but give it **no FUSE
 mount** for Unity Catalog Volumes, so `FilesystemBackend(root_dir=...)` cannot
@@ -15,11 +28,13 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import posixpath
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 from databricks.sdk import WorkspaceClient
+from deepagents.backends import CompositeBackend, StateBackend
 from deepagents.backends.protocol import (
     BackendProtocol,
     DeleteResult,
@@ -42,9 +57,12 @@ from deepagents.backends.utils import (
     slice_read_response,
     update_file_data,
 )
+from deepagents.middleware.filesystem import FilesystemPermission
 
 from agent_server.documents import UnreadableDocumentError, decode
 from agent_server.okf import ensure_conformant, is_reserved
+from agent_server.skills import SKILLS_MOUNT
+from agent_server.clients import jakarta_workspace_client
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +209,25 @@ class VolumeBackend(BackendProtocol):
         except Exception as exc:
             return WriteResult(error=self._describe(exc, target, "write"))
         return WriteResult(path=file_path)
+
+    def upload_bytes(self, file_path: str, data: bytes) -> str:
+        """Write raw bytes, bypassing the text and OKF paths. Returns the Volume path.
+
+        Not part of `BackendProtocol`, and not reachable by the agent: this is
+        the ingest side, used by the chat upload route in `routes.py`. Two
+        reasons it cannot go through `write`. A `.docx` is a ZIP, so decoding it
+        to UTF-8 to write it would corrupt it. And `write` applies
+        `_as_okf`, which would stamp OKF frontmatter onto a markdown file a
+        person attached — turning their document into a malformed concept
+        rather than leaving it as the source it is.
+
+        Escapes raise rather than returning an error result, because the caller
+        is a request handler that owes the user a status code and this is the
+        only signal that says which one.
+        """
+        target = self._resolve(file_path)
+        self._client.files.upload(target, io.BytesIO(data), overwrite=True)
+        return target
 
     def edit(
         self,
@@ -348,3 +385,164 @@ class VolumeBackend(BackendProtocol):
         if "does not exist" in str(exc) or "NOT_FOUND" in str(exc) or "404" in str(exc):
             return f"Error: '{self._to_agent_path(target)}' not found"
         return f"Error: could not {operation} '{self._to_agent_path(target)}': {exc}"
+
+
+# The two halves of the wiki tier. Both are subdirectories of one Unity Catalog
+# Volume; the prefix, not the storage, is what states provenance.
+WIKI_SOURCE_MOUNT = "/wiki/raw/"
+WIKI_NOTES_MOUNT = "/wiki/notes/"
+WIKI_SOURCE_SUBDIR = "raw"
+WIKI_NOTES_SUBDIR = "notes"
+
+
+def wiki_routes(client: Optional[Any] = None, okf_actor: Optional[str] = None) -> dict[str, Any]:
+    """The two wiki routes, or nothing when the Volume is not configured.
+
+    Both tiers are subdirectories of a single Volume, reached with the same
+    Jakarta credentials as the SQL tools. The grant is therefore uniform and
+    read-only on `/wiki/raw/` is *not* enforced by it — a UC volume grant
+    is per-volume, not per-path. The deny rule in `filesystem_permissions()` is
+    what refuses the write, which makes that rule load-bearing rather than
+    defence in depth.
+
+    Absence is a supported state, not a failure: the course is taught on
+    laptops that may not hold the credential, and an agent that refuses to
+    start without a wiki is worse than one that starts without the tier.
+
+    `client` is injectable so a caller can supply one. Constructing a
+    `WorkspaceClient` is not free or reliably fast — a wrong host sends the SDK
+    into an authentication retry that blocks rather than raising — so the
+    construction is guarded and a failure degrades this run to no tier.
+
+    `okf_actor` is the caller's identity to stamp onto notes it writes; this
+    module has no opinion on what the agent is, so it takes the value rather
+    than computing it.
+    """
+    volume = os.environ.get("DATABRICKS_WIKI_VOLUME")
+    if not volume:
+        logger.info(
+            "DATABRICKS_WIKI_VOLUME not set — continuing without the /wiki/ tier."
+        )
+        return {}
+    if client is None:
+        try:
+            client = jakarta_workspace_client()
+        except Exception:
+            logger.warning(
+                "Could not build a client for the wiki Volume. "
+                "Continuing without the /wiki/ tier.",
+                exc_info=True,
+            )
+            return {}
+    if client is None:
+        logger.info(
+            "DATABRICKS_WIKI_VOLUME is set but DATABRICKS_JAKARTA_* is not — "
+            "continuing without the /wiki/ tier."
+        )
+        return {}
+    return {
+        WIKI_SOURCE_MOUNT: VolumeBackend(client, volume, WIKI_SOURCE_SUBDIR),
+        # No write-time identity guard on this tier: the check it used was
+        # removed with `agent_server/privacy.py`. Durable writes are covered
+        # only by the system prompt and, for the main agent, by the fact that
+        # `PIIMiddleware` pseudonymises identities before the model sees them.
+        WIKI_NOTES_MOUNT: VolumeBackend(
+            client,
+            volume,
+            WIKI_NOTES_SUBDIR,
+            # The write path supplies OKF frontmatter itself. Asking the prompt
+            # for it would make conformance a matter of good behaviour; this
+            # makes it a property of the tier.
+            okf_actor=okf_actor,
+        ),
+    }
+
+
+def uploads_backend(client: Optional[Any] = None) -> Optional[VolumeBackend]:
+    """The backend the chat upload route writes through, or None when unconfigured.
+
+    The Volume's `raw/` subdirectory, with **no** `okf_actor`: an attachment is
+    a source document, and stamping OKF frontmatter onto someone's markdown
+    would turn it into a malformed concept rather than leaving it as what they
+    sent.
+
+    Deliberately a separate instance from the one `wiki_routes` mounts, not the
+    same object reached through the agent's backend. The agent's route is behind
+    the `/wiki/raw/**` write deny; this one is not, and that difference should
+    be visible as two constructions rather than hidden in a permission check
+    that only applies on one path. Uploading is a person putting a file in the
+    landing tree — the same act the tier already exists for — and the agent
+    still cannot write there.
+
+    Built per request rather than cached. An upload is rare and the client
+    construction is the same one `wiki_routes` does; a module-level singleton
+    would only add a state to get wrong when the environment changes under a
+    reload.
+    """
+    volume = os.environ.get("DATABRICKS_WIKI_VOLUME")
+    if not volume:
+        return None
+    if client is None:
+        try:
+            client = jakarta_workspace_client()
+        except Exception:
+            logger.warning("Could not build a client for uploads.", exc_info=True)
+            return None
+    if client is None:
+        return None
+    return VolumeBackend(client, volume, WIKI_SOURCE_SUBDIR)
+
+
+def build_backend(
+    wiki_client: Optional[Any] = None, okf_actor: Optional[str] = None
+) -> CompositeBackend:
+    """The agent's filesystem, tiered so a path prefix states a file's lifetime,
+    who wrote it, and whether the agent may write there.
+
+        /                  turn-scoped scratch, discarded with the thread
+        /skills/           read-only, seeded from the repository each turn
+        /wiki/raw/         read-only landing tree, any format, written by people
+        /wiki/notes/       the wiki: an OKF bundle, durable, shared across users
+
+    The default is state rather than local disk on purpose. An agent writing
+    scratch files onto a container's ephemeral filesystem has produced something
+    that looks durable and is not; keeping the default in state makes the
+    lifetime honest and the prefix makes it visible.
+
+    Note that neither `/skills/` nor `/wiki/` itself is a route: `skill_files()`
+    is what puts content under `/skills/`, seeded into state on invoke (see
+    `routes.py`) rather than mounted; and a bare `/wiki/…` path falls through
+    to scratch, so a file only becomes durable at a prefix that says which of
+    the two wiki tiers it belongs to.
+    """
+    routes: dict[str, Any] = wiki_routes(wiki_client, okf_actor=okf_actor)
+    logger.info("Filesystem tiers: / (scratch), %s", ", ".join(sorted(routes)) or "none")
+    return CompositeBackend(default=StateBackend(), routes=routes)
+
+
+def filesystem_permissions() -> list[FilesystemPermission]:
+    """Deny writes under the skills mount and the wiki's landing tree.
+
+    Telling the agent not to edit its own instructions is not a control. A rule
+    that refuses the write is, and it holds against an injected instruction as
+    well as against an agent's own initiative — which is the point of keeping
+    skills in the repository, where a change to them has to pass review.
+
+    The same rule covers `/wiki/raw/` for a different reason. It is where
+    people drop files, in whatever format they arrived in, and what someone
+    put there should change where they put it rather than through the agent.
+    Here the rule is the *only* thing enforcing that: the Volume grant covers
+    both subdirectories, so a gap in this list is a correctness bug and not a
+    missing hardening measure.
+
+    `/wiki/notes/` is deliberately absent. It is the wiki, holding authored
+    policy and the agent's own notes side by side, and the agent writes there;
+    `generated.by` is what separates the two, not a permission.
+    """
+    return [
+        FilesystemPermission(
+            operations=["write"],
+            paths=[f"{SKILLS_MOUNT}**", f"{WIKI_SOURCE_MOUNT}**"],
+            mode="deny",
+        )
+    ]

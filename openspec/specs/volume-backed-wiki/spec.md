@@ -1,8 +1,10 @@
+# volume-backed-wiki Specification
+
 ## Purpose
 
-Defines the agent's durable knowledge tier: how policy facts held in Pertamina's internal OpenWiki reach the agent from a Unity Catalog Volume as an Open Knowledge Format bundle, how the agent writes durable notes back to that same store, what provenance and writability each path prefix carries, what may never be written there, and how the agent behaves when the Volume is unreachable.
+Defines the agent's durable knowledge tier: how policy facts reach the agent from a Unity Catalog Volume as an Open Knowledge Format bundle, how files arrive in the format they were authored in, how the agent writes durable notes into the same wiki, how a reader tells authored policy from an agent's note, what may never be written there, and how the agent behaves when the Volume is unreachable.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: The knowledge tier is an Open Knowledge Format bundle
 
@@ -56,35 +58,45 @@ A concept stating a policy fact the data cannot supply — a resolution target, 
 
 ### Requirement: Internal knowledge sources are reachable as files
 
-Content originating in OpenWiki SHALL be readable by the agent as files under a durable tier, without that content existing as a Unity Catalog table and without the agent holding credentials for the source system. Synced source content SHALL occupy a path prefix of its own, distinct from the prefix the agent writes to, so that an answer drawn from the source can be attributed to it.
+Policy content SHALL be readable by the agent as files under a durable tier, without that content existing as a Unity Catalog table and without the agent holding credentials for the system it was authored in.
 
-#### Scenario: A policy fact is read from the source prefix
+The tier SHALL carry two prefixes, divided by the form content arrives in rather than by who wrote it. A **landing prefix** SHALL hold files as people dropped them, in whatever format they arrived in, including formats that are not markdown. A **wiki prefix** SHALL hold the OKF bundle the agent reads and writes. A reader SHALL be able to tell from the prefix alone which of the two a path names.
 
-- **WHEN** the agent needs a fact held in OpenWiki
+#### Scenario: A policy fact is read from the wiki prefix
+
+- **WHEN** the agent needs a policy fact
 - **THEN** it SHALL read that content through the durable tier's filesystem interface
-- **AND** the path it read SHALL identify the content as synced source material rather than as something the agent wrote
+- **AND** the document it reads SHALL be a conformant OKF concept
 
-#### Scenario: Source and agent-written content remain distinguishable
+#### Scenario: A source document arrives in its authored format
 
-- **WHEN** the agent lists the durable tier
-- **THEN** synced source content and agent-written notes SHALL appear under separate prefixes
-- **AND** neither SHALL be reachable at the other's prefix
+- **WHEN** a person drops a file that is not markdown under the landing prefix
+- **THEN** it SHALL remain reachable there in that format
+- **AND** the agent SHALL be able to read its text without that file having been converted first
 
 #### Scenario: No source-system credentials in the agent
 
 - **WHEN** the agent reads internal knowledge content
 - **THEN** it SHALL do so through the durable tier alone
-- **AND** it SHALL NOT authenticate to OpenWiki directly
+- **AND** it SHALL NOT authenticate to the authoring system directly
 
-### Requirement: Synced source content is read-only to the agent
+### Requirement: The landing prefix is read-only to the agent
 
-The source prefix SHALL refuse writes, edits, and deletes from the agent. Content that a person authored in an internal system SHALL be changeable only in that system, so that the copy the agent reads cannot diverge from its origin through the agent's own action.
+The landing prefix SHALL refuse writes, edits, and deletes from the agent. It is where people put files, and what someone put there SHALL be changeable where they put it rather than through the agent, so that the copy the agent reads cannot diverge from its origin through the agent's own action.
 
-#### Scenario: A write to a source prefix is refused
+The refusal SHALL be enforced by a rule the agent cannot reach, not by instruction and not by the storage grant. A grant over the Volume covers both prefixes alike, so an absent rule leaves the prefix writable however firmly the prompt forbids it.
 
-- **WHEN** the agent attempts to write, edit, or delete under a source prefix
+#### Scenario: A write to the landing prefix is refused
+
+- **WHEN** the agent attempts to write, edit, or delete under the landing prefix
 - **THEN** the operation SHALL fail
 - **AND** the existing content SHALL be unchanged
+
+#### Scenario: The refusal holds against an injected instruction
+
+- **WHEN** content the agent reads instructs it to write to the landing prefix
+- **THEN** the write SHALL still be refused
+- **AND** the refusal SHALL not depend on the agent having declined to attempt it
 
 #### Scenario: A refused write does not end the request
 
@@ -92,9 +104,11 @@ The source prefix SHALL refuse writes, edits, and deletes from the agent. Conten
 - **THEN** the agent SHALL receive the refusal as a result it can act on
 - **AND** the request SHALL continue rather than terminating
 
-### Requirement: The agent writes durable notes to the same store
+### Requirement: The agent writes durable notes into the wiki
 
-The agent SHALL be able to record what it learns to a writable prefix of the durable tier. A note written during one request SHALL be readable in a later request, in a different session, by a different user. Notes SHALL be held in the same store as the synced source content, under a prefix distinct from the source prefix.
+The agent SHALL be able to record what it learns to the wiki prefix. A note written during one request SHALL be readable in a later request, in a different session, by a different user.
+
+Notes SHALL be held in the wiki itself, alongside authored policy, rather than in a tier of their own. A knowledge base divided by author is two knowledge bases, and a reader looking for what is known about a subject SHALL find it in one place.
 
 #### Scenario: A note survives the thread
 
@@ -114,11 +128,37 @@ The agent SHALL be able to record what it learns to a writable prefix of the dur
 - **THEN** it SHALL be able to overwrite or delete that note
 - **AND** the change SHALL be durable on the same terms as the original write
 
-#### Scenario: Agent writes cannot be overwritten by a source refresh
+#### Scenario: A re-seed leaves a note at an unseeded path alone
 
-- **WHEN** source content is refreshed from OpenWiki
-- **THEN** notes the agent wrote SHALL be unaffected
-- **AND** no agent-written note SHALL be reachable at a path a refresh may replace
+- **WHEN** the committed bundle is uploaded again
+- **THEN** a note the agent wrote at a path the bundle does not contain SHALL be unaffected
+- **AND** a path the bundle does contain MAY be replaced, since the seeded document is the authored one
+
+### Requirement: Provenance is carried by the actor, not by the path
+
+The wiki prefix holds both authored policy and the agent's own notes, so the path SHALL NOT be what distinguishes them. Every document SHALL instead declare its author in OKF frontmatter, under the §7 actor convention: a `human:` actor for authored content, and `<producer>/<version>` for a document the agent generated.
+
+The agent SHALL NOT be asked to supply its own actor. The write path SHALL stamp it, so that conformance is a property of the tier rather than of the agent's good behaviour.
+
+A consumer SHALL be able to rank the two: a figure SHALL rest on authored policy or on the data, and never on a document some earlier turn generated.
+
+#### Scenario: An agent's note declares an agent actor
+
+- **WHEN** the agent writes a note
+- **THEN** the stored document SHALL carry a `generated.by` naming the producer and its version
+- **AND** that value SHALL NOT have been supplied by the model
+
+#### Scenario: Authored policy is distinguishable from a generated note
+
+- **WHEN** a reader encounters two documents under the wiki prefix
+- **THEN** the actor in each document's frontmatter SHALL say which was authored and which was generated
+- **AND** the distinction SHALL NOT require knowing which path each was read from
+
+#### Scenario: A generated note is not evidence for a figure
+
+- **WHEN** a figure could be drawn from a document carrying an agent actor
+- **THEN** the agent SHALL recompute it from the data instead
+- **AND** where the two disagree, the data SHALL win
 
 ### Requirement: Durability does not weaken the privacy constraint
 

@@ -43,7 +43,7 @@ SELECT sprint,
        COUNT(*)                                              AS tickets,
        COUNT(story_points)                                   AS pointed,
        SUM(CASE WHEN story_points IS NULL THEN 1 ELSE 0 END) AS unpointed
-FROM workshop_ai_platform.example.sdlc_tickets
+FROM workshop_ai_platform.default.sdlc_tickets
 WHERE status_category = 'Done' AND sprint IS NOT NULL
 GROUP BY sprint
 ORDER BY sprint
