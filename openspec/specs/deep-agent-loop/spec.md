@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Defines how the agent plans multi-step work, delegates bounded sub-tasks, and reads and writes through a filesystem whose path prefixes carry distinct lifetimes and provenance — including how repository-held skills are discovered, disclosed on demand, and protected from modification by the agent.
+Defines how the agent plans multi-step work, delegates bounded sub-tasks, and reads and writes through a filesystem whose path prefixes carry distinct lifetimes and writability — including how repository-held skills are discovered, disclosed on demand, and protected from modification by the agent.
 
 ## Requirements
 
@@ -53,6 +53,10 @@ The agent SHALL be able to delegate a bounded sub-task to a subagent that does n
 
 The agent SHALL access files through a single filesystem interface whose path prefix determines which tier serves the request. Each tier SHALL have a distinct lifetime, and the prefix SHALL be sufficient to determine that lifetime without inspecting the file.
 
+The prefix SHALL also be sufficient to determine **whether the agent may write to it**, without inspecting the file and without knowing which storage backs the tier: a single durable store may serve several prefixes, and a grant over that store says nothing about any one of them.
+
+Authorship SHALL NOT be inferred from the prefix. A tier may deliberately hold both authored and agent-generated documents — a knowledge base divided by author is two knowledge bases — and where it does, the document itself SHALL declare its author. The prefix answers *may I write here*; the document answers *who wrote this*.
+
 #### Scenario: Unprefixed paths are turn-scoped scratch
 
 - **WHEN** the agent writes to a path outside any configured tier prefix
@@ -69,6 +73,24 @@ The agent SHALL access files through a single filesystem interface whose path pr
 
 - **WHEN** a path could match more than one configured prefix
 - **THEN** the longest matching prefix SHALL serve the request
+
+#### Scenario: A prefix states writability
+
+- **WHEN** the agent encounters a path under any configured prefix
+- **THEN** the prefix SHALL determine whether a write there is permitted
+- **AND** that determination SHALL NOT require reading the file or knowing which storage backs the tier
+
+#### Scenario: One prefix may carry both provenances
+
+- **WHEN** a prefix holds both authored documents and documents the agent wrote
+- **THEN** each document SHALL declare its own author
+- **AND** a reader SHALL NOT have to infer authorship from the path it was read from
+
+#### Scenario: A read-only prefix is enforced by rule, not by grant
+
+- **WHEN** a durable store serves both a writable prefix and a read-only one
+- **THEN** the refusal on the read-only prefix SHALL come from a permission rule
+- **AND** it SHALL hold even though the storage grant permits the write
 
 ### Requirement: Skills are loaded from the repository
 
@@ -95,6 +117,8 @@ The agent SHALL discover skills from a directory held in the repository and depl
 
 Only a skill's identifying metadata SHALL be carried in the agent's instructions at all times. A skill's full content SHALL be read only when the agent determines it is needed, so that the cost of an unused skill is bounded to its metadata.
 
+Where more than one skill's metadata plausibly matches a request, the agent SHALL select among them rather than reading each in turn. Not reading the plainly unrelated is no longer sufficient: a menu whose descriptions overlap makes the number of bodies read a cost the agent controls, and that cost SHALL be bounded.
+
 #### Scenario: Metadata is always present, body is not
 
 - **WHEN** a request begins
@@ -112,6 +136,24 @@ Only a skill's identifying metadata SHALL be carried in the agent's instructions
 - **WHEN** a request is unrelated to any discovered skill
 - **THEN** no skill content SHALL be read
 - **AND** the request SHALL incur only the cost of the skills' metadata
+
+#### Scenario: One skill is selected from several plausible descriptions
+
+- **WHEN** a request matches the descriptions of more than one skill
+- **THEN** the agent SHALL select the skill that fits rather than reading every candidate
+- **AND** the number of skill bodies read SHALL be observable in the trace as a cost distinct from the answer
+
+#### Scenario: Reading a skill that does not fit is recoverable
+
+- **WHEN** the agent reads a skill that turns out not to fit the request
+- **THEN** it SHALL be able to read the skill that does
+- **AND** the request SHALL continue rather than proceeding on the unfitting skill's guidance
+
+#### Scenario: Menu size does not degrade selection silently
+
+- **WHEN** skills are added to the menu
+- **THEN** the effect on selection SHALL be measured rather than assumed
+- **AND** a menu that has grown past the point where selection is reliable SHALL be detectable from that measurement
 
 ### Requirement: The agent cannot modify its own skills
 
