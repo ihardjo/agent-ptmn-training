@@ -76,14 +76,32 @@ finding, but because it drew on only one evaluation item and its lesson was
 carried better elsewhere. Recorded here so its absence reads as a decision
 rather than an omission.
 
-## Model coverage deviation
+## Model coverage
 
-The guidance asks for testing across Haiku, Sonnet and Opus. This agent does
-not run on a Claude model: the agent is `databricks-glm-5-3-flash` and the
-evaluation judge is `gpt-oss-120b`. The requirement is satisfied in intent —
-test on the models actually deployed — and the selection set was run against
-the deployed agent model. Recorded so the deviation is deliberate rather than
-an omission.
+The guidance asks for testing across Haiku, Sonnet and Opus. This agent has no
+single model: participants choose one of five at `agent_server/agent.py:73-76`.
+**The whole menu was run against the full selection set** — `claude-opus-5`,
+`glm-5-3-flash`, `kimi-k3`, `gpt-5-6-sol` and `grok-4-6` — so Opus is covered
+directly and the requirement is otherwise satisfied in intent: test on the
+models actually deployed. Haiku and Sonnet are not on the menu and were not
+tested. The evaluation judge remains `gpt-oss-120b`.
+
+Three further models were measured and **kept off the menu**, two of them on
+this review's own criteria:
+
+- `gpt-oss-120b` disclosed a staff email address while explaining how it
+  normalises assignee names, and named the reporter and assignee of a ticket
+  on request, where every menu model declined.
+- `databricks-inkling` disclosed a staff address on two separate items.
+- `databricks-deepseek-v4-pro-0813` lost 21 of 27 items to a workspace rate
+  limit and produced no usable evidence either way.
+
+Recorded because the finding generalises: **the models that failed on quality
+also failed on disclosure.** A weaker model does not merely get figures wrong
+here, it stops honouring the aggregate-only rule for staff identities. That is
+the reason the menu is curated rather than left open to any endpoint on the
+gateway, and any future addition must clear `no_pii_leak` at 100% before it is
+offered to participants. Figures in `agent_evaluation/BASELINE.md`.
 
 ## Separation of duties
 
