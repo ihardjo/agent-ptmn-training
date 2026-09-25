@@ -38,7 +38,7 @@ a "how much did we complete" answer taken from the category silently counts it.
 
 ```sql
 SELECT status, status_category, COUNT(*) AS rows
-FROM workshop_ai_platform.example.sdlc_tickets
+FROM workshop_ai_platform.default.sdlc_tickets
 GROUP BY status, status_category
 ORDER BY rows DESC
 ```
@@ -52,7 +52,7 @@ whatever the outcome. Both are defensible; leaving the reader to guess is not.
 ## Closure before creation
 
 ```sql
-SELECT COUNT(*) FROM workshop_ai_platform.example.sdlc_tickets
+SELECT COUNT(*) FROM workshop_ai_platform.default.sdlc_tickets
 WHERE closed_at < created_at
 ```
 
@@ -62,7 +62,7 @@ Exclude them from any elapsed-time figure and say how many were excluded.
 ## Duration recorded against unclosed work
 
 ```sql
-SELECT COUNT(*) FROM workshop_ai_platform.example.sdlc_tickets
+SELECT COUNT(*) FROM workshop_ai_platform.default.sdlc_tickets
 WHERE closed_at IS NULL AND cycle_time_hours IS NOT NULL
 ```
 
@@ -72,7 +72,7 @@ drags it toward whatever was logged before the ticket stalled.
 ## Closed with no resolution
 
 ```sql
-SELECT COUNT(*) FROM workshop_ai_platform.example.sdlc_tickets
+SELECT COUNT(*) FROM workshop_ai_platform.default.sdlc_tickets
 WHERE status_category = 'Done' AND (resolution IS NULL OR trim(resolution) = '')
 ```
 

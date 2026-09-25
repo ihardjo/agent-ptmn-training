@@ -21,7 +21,7 @@ from agent_server.okf import (
     parse,
 )
 
-SEED = pathlib.Path(__file__).resolve().parent.parent / "wiki_seed" / "raw"
+SEED = pathlib.Path(__file__).resolve().parent.parent / "wiki_seed" / "notes"
 ACTOR = "agent-ptmn-training/test-model"
 FIXED = datetime(2026, 9, 18, 7, 30, 0, tzinfo=timezone.utc)
 
@@ -197,7 +197,7 @@ def test_a_malformed_block_is_kept_verbatim_in_the_body():
 
 
 def test_the_actor_follows_the_okf_convention():
-    from agent_server.agent import OKF_ACTOR
+    from agent_server.config import OKF_ACTOR
 
     producer, _, version = OKF_ACTOR.partition("/")
     assert producer and version, "§7 wants `<producer>/<version>` for an agent"

@@ -1,13 +1,18 @@
-import logging
-import os
-from typing import Optional
-import random
+"""What the model can call: the tools defined here, and the ones the SQL
+server offers, assembled into the one list the agent is built with.
 
+The connection to Databricks lives in `clients.py`; this module is only about
+which tools reach the model.
+"""
+
+import logging
+import random
 from datetime import datetime, timezone
+from typing import Any
+
 from langchain_core.tools import tool
 
-from databricks.sdk import WorkspaceClient
-from databricks_langchain import DatabricksMCPServer, DatabricksMultiServerMCPClient
+from agent_server.mcp import mcp_tools
 
 logger = logging.getLogger(__name__)
 
@@ -33,53 +38,28 @@ def roll_dice(sides: int = 6) -> int:
     """Roll a die with the given number of sides."""
     return random.randint(1, sides)
 
+## TODO 3a: Tool Selection (Manually Defined Tools)
+# The tools defined above. Drop one from this list to take it away from the
+# model; the function itself stays here, unused.
+SELECTED_CUSTOM_TOOLS = [
+    get_current_time,
+    days_until,
+    roll_dice,
+]
 
-def jakarta_workspace_client() -> Optional[WorkspaceClient]:
-    """A client for the Jakarta workspace, or None when it is not configured.
+## TODO 3b: Tool Selection (Databricks Managed MCP)
+# ["execute_sql", "execute_sql_read_only" "poll_sql_result"]
+SELECTED_MCP_TOOLS = ["execute_sql_read_only", "poll_sql_result"]
 
-    The host is explicit rather than derived. The ambient Databricks
-    environment belongs to the workspace this app runs in, which is not the
-    one holding the data.
+async def agent_tools() -> list[Any]:
+    """Every tool the agent is built with, remote ones first.
+
+    An unreachable SQL server returns none of its own rather than raising, so
+    the agent still starts with the locally defined tools — see `mcp_tools`.
     """
-    host = os.environ.get("DATABRICKS_JAKARTA_HOST")
-    client_id = os.environ.get("DATABRICKS_JAKARTA_CLIENT_ID")
-    client_secret = os.environ.get("DATABRICKS_JAKARTA_CLIENT_SECRET")
-    if not (host and client_id and client_secret):
-        return None
-    return WorkspaceClient(
-        host=host,
-        client_id=client_id,
-        client_secret=client_secret,
-        # Pinned to prevent SDK picking up the ambient Databricks auth, which produces
-        # invalid token for *this* workspace.
-        auth_type="oauth-m2m",
-        # Pinned to prevent ambient CLI profile leaking.
-        profile="",
-    )
+    sql_tools = await mcp_tools(SELECTED_MCP_TOOLS)
 
-
-def init_mcp_client() -> Optional[DatabricksMultiServerMCPClient]:
-    """The Jakarta managed SQL MCP server (system.ai.dbsql), 
-    or None when it is not configured.
-
-    SQL is the only server: `system.ai` functions are Unity Catalog UDFs, so
-    the model reaches them through `execute_sql` rather than spending tool
-    definitions on them.
-    """
-    jakarta = jakarta_workspace_client()
-    if jakarta is None:
-        logger.info("DATABRICKS_JAKARTA_* not configured — the agent will have no tools.")
-        return None
-    return DatabricksMultiServerMCPClient(
-        [
-            DatabricksMCPServer(
-                name="dbsql",
-                url=f"{os.environ['DATABRICKS_JAKARTA_HOST']}/ai-gateway/mcp-services/system.ai.dbsql",
-                workspace_client=jakarta,
-                # A statement that fails comes back as a normal result whose
-                # payload carries the error, so this only covers transport
-                # faults — leaving those to the model beats ending the turn.
-                handle_tool_error=True,
-            ),
-        ]
-    )
+    return [
+        *sql_tools,
+        *SELECTED_CUSTOM_TOOLS,
+    ]

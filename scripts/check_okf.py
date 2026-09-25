@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 REPO_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=REPO_ROOT / ".env", override=True)
 
-SEED_DIR = REPO_ROOT / "wiki_seed" / "raw"
+SEED_DIR = REPO_ROOT / "wiki_seed" / "notes"
 
 # Each tier is its own bundle, checked separately. They are not one bundle with
 # two subdirectories, for two reasons: `/wiki/` itself is not a route, so a
@@ -48,18 +48,18 @@ def volume_documents() -> dict[str, dict[str, str]] | None:
     Returns None when the Volume is not reachable, which is a supported state
     rather than a failure.
     """
-    from databricks.sdk import WorkspaceClient
+    # Built the way the agent builds it, so `DATABRICKS_JAKARTA_PROFILE` works
+    # here too — a laptop whose workspace has no service principal yet would
+    # otherwise report both tiers empty rather than saying it could not look.
+    from agent_server.clients import jakarta_workspace_client
 
     volume = os.environ.get("DATABRICKS_WIKI_VOLUME")
-    host = os.environ.get("DATABRICKS_JAKARTA_HOST")
-    client_id = os.environ.get("DATABRICKS_JAKARTA_CLIENT_ID")
-    client_secret = os.environ.get("DATABRICKS_JAKARTA_CLIENT_SECRET")
-    if not (volume and host and client_id and client_secret):
+    if not volume:
         return None
 
-    w = WorkspaceClient(
-        host=host, client_id=client_id, client_secret=client_secret, auth_type="oauth-m2m"
-    )
+    w = jakarta_workspace_client()
+    if w is None:
+        return None
     bundles: dict[str, dict[str, str]] = {}
     for subdir in SUBDIRS:
         base = f"{volume.rstrip('/')}/{subdir}"

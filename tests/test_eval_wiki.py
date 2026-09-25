@@ -43,7 +43,7 @@ def test_sql_tools_is_an_allowlist_not_a_denylist():
 def test_statement_count_reflects_sql_only():
     output = {
         "statements": ["SELECT 1", "DESCRIBE TABLE t"],
-        "wiki_reads": ["/wiki/raw/policies/resolution-targets.md", "/wiki/raw/"],
+        "wiki_reads": ["/wiki/notes/policies/resolution-targets.md", "/wiki/raw/"],
         "wiki_writes": [{"content": "a note", "refused": False}],
     }
     assert len(_statements(output)) == 2
@@ -71,7 +71,7 @@ def test_a_fabricated_target_scores_zero():
 def test_a_read_backed_answer_scores_one():
     e = wiki_was_read(
         input={},
-        output={"answer": "x", "wiki_reads": ["/wiki/raw/policies/resolution-targets.md"]},
+        output={"answer": "x", "wiki_reads": ["/wiki/notes/policies/resolution-targets.md"]},
         expected_output={"requires_wiki_read": True},
     )
     assert e.value == 1.0

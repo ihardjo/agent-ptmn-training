@@ -47,7 +47,7 @@ import os
 import pathlib
 import re
 
-TABLE = "workshop_ai_platform.example.sdlc_tickets"
+TABLE = "workshop_ai_platform.default.sdlc_tickets"
 DATASET = "sdlc-agent-eval-v1"
 # The verifying queries live with the loader that also runs them: they describe
 # the table, not the evaluation.
@@ -189,7 +189,7 @@ ITEMS: list[dict] = [
 
     # ── the target comes from the wiki, not the data (v2: answerable) ─────────
     # These three expected a refusal at v1, when no target existed anywhere.
-    # `/wiki/raw/policies/resolution-targets.md` now supplies one, so the
+    # `/wiki/notes/policies/resolution-targets.md` now supplies one, so the
     # correct answer is a figure — and `requires_wiki_read` asks the further
     # question the figure alone cannot: was the target read, or guessed?
     #

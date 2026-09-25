@@ -28,7 +28,7 @@ import time
 from typing import Any
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-EVAL_TABLE = "workshop_ai_platform.example.sdlc_tickets"
+EVAL_TABLE = "workshop_ai_platform.default.sdlc_tickets"
 
 
 def _load_env() -> None:
@@ -152,13 +152,14 @@ async def _ask(question: str) -> dict:
     from langfuse.langchain import CallbackHandler
 
     from agent_server.agent import init_agent
+    from agent_server.skills import skill_files
     from agent_server.utils import TEXT, _content_parts
 
     # The PII net is off for evaluation. It pseudonymises identities before the
     # model sees them, so scoring a run with it on would measure the net rather
     # than the model and `no_pii_leak` would return 1.0 for every item. The net
     # is covered by `tests/test_output_redaction.py` instead.
-    agent = await init_agent(flag_pii=False, show_provenance=False)
+    agent = await init_agent(flag_pii=False)
     # Same gate as the serving layer: an unset host resolves to Langfuse cloud
     # inside the SDK, so keys without a host would ship prompts off-premises.
     host = os.environ.get("LANGFUSE_BASE_URL") or os.environ.get("LANGFUSE_HOST")
@@ -173,7 +174,10 @@ async def _ask(question: str) -> dict:
     started = time.monotonic()
 
     async for mode, payload in agent.astream(
-        input={"messages": [{"role": "user", "content": question}]},
+        input={
+            "messages": [{"role": "user", "content": question}],
+            "files": skill_files(),
+        },
         stream_mode=["updates", "messages"],
         config=config,
     ):

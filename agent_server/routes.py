@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from langfuse.langchain import CallbackHandler
 
 from agent_server.agent import init_agent
+from agent_server.skills import skill_files
 from agent_server.models import (
     AssistantMessage,
     ChatCompletionChoice,
@@ -49,9 +50,17 @@ def trace_config(session_id: str | None = None) -> dict:
 
 
 def agent_stream(agent: Any, messages: list, session_id: str | None):
-    """The agent's event stream for one request."""
+    """The agent's event stream for one request.
+
+    `files=` seeds the skills tier into this turn's state: `StateBackend`
+    holds only graph state, so this is how the model sees skill content it
+    never wrote (see `skill_files()` in `agent.py`).
+    """
     return agent.astream(
-        input={"messages": [{"role": m.role, "content": normalize_content(m.content)} for m in messages]},
+        input={
+            "messages": [{"role": m.role, "content": normalize_content(m.content)} for m in messages],
+            "files": skill_files(),
+        },
         stream_mode=["updates", "messages"],
         config=trace_config(session_id),
     )

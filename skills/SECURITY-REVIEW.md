@@ -18,7 +18,7 @@ Automated portion: `uv run check-skills`, which runs as preflight step 1.
 | MCP server references | No skill names an MCP server or a fully-qualified tool. Skills describe method; the agent selects its own tools. | None |
 | Network access patterns | No URLs. No `fetch`, `curl`, or `requests`. Enforced by `check-skills`. | None |
 | Hardcoded credentials | None. Enforced by `check-skills` against a credential-shaped pattern. | None |
-| Filesystem access scope | Skills reference `/wiki/raw/` documents by absolute path — reads of a tier the agent already has, and which is read-only to it by the deny rule in `filesystem_permissions()`. No `../` traversal; enforced by `check-skills`. | Low |
+| Filesystem access scope | Skills reference `/wiki/notes/` documents by absolute path — reads of a tier the agent already has. No `../` traversal; enforced by `check-skills`. Note that `/wiki/notes/` is writable by the agent, so a skill's cited policy document is not protected by the deny rule the way `/wiki/raw/` and `/skills/` are; `generated.by` is what marks it as authored rather than agent-produced. | Low |
 | Tool invocations | Skills contain SQL for the agent to run against one table through its read-only tool, and direct it to read named wiki documents. No writes are directed anywhere. | Low |
 
 ## Review checklist
@@ -37,7 +37,7 @@ Automated portion: `uv run check-skills`, which runs as preflight step 1.
 4. **Checked for external URL fetches or network calls.** None.
 5. **No hardcoded credentials.** None.
 6. **Tools and commands the skills direct.** Read-only SQL against
-   `workshop_ai_platform.example.sdlc_tickets`; reads of `/wiki/raw/`
+   `workshop_ai_platform.default.sdlc_tickets`; reads of `/wiki/notes/`
    documents. No skill directs a write to any tier. Considered in
    combination: the tier grants read of governed data and read of governed
    policy, with no network path out, so the file-read and network-tool

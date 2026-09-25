@@ -12,11 +12,33 @@ the old key and the numbers below mean nothing.
 
 | | |
 |---|---|
-| Model | `databricks-glm-5-3-flash` (`agent_server/agent.py:72`) |
-| Skills mounted | all 10 (`SKILLS_ALL`) |
+| Model | `databricks-glm-5-3-flash` (now set in `agent_server/config.py`) |
+| Skills mounted | all 10 — the whole menu, unfiltered |
 | Tools | `execute_sql`, `poll_sql_result` |
 | `auditing-data-quality` | v2 |
 | Run name | `glm-5-3-flash-baseline-final` |
+
+### The agent has since changed — a run today is not comparable
+
+The numbers below measure the configuration in that table, which is no longer
+the one `init_agent()` builds. Re-running `agent-evaluate` now answers a
+different question, and a delta against this file is not a regression. What
+moved, and why each one can shift a score:
+
+| Change | Reaches the scores through |
+|---|---|
+| Skills: all 10 → the 3 in `SELECTED_SKILLS` | `skill_selection` — the distractors that made a mis-selection possible are no longer mounted, and `q-target-trend`'s known failure needs `auditing-data-quality` present to reproduce |
+| SQL endpoint moved to `/api/2.0/mcp/sql`, which also offers `execute_sql_read_only` | `tool_efficiency`, `sql_identifiers_escaped` |
+| `hide_unusable_tools` removed | `tool_efficiency` — `execute` and `task` are offered again, and neither can work here |
+| Wiki split into a `raw/` landing tree and an OKF `notes/` wiki | `wiki_was_read` — the policy documents moved to `/wiki/notes/` |
+| Ticket table is now `workshop_ai_platform.default.sdlc_tickets` on a different workspace | any numeric evaluator, if the rows ever diverge (they were verified identical at the move) |
+
+`flag_pii` and the provenance middleware are not on this list: scored runs
+already disabled the first and the second is gone, so neither changed what a
+run measures.
+
+To re-baseline, record a new file rather than editing this one — the
+comparison between them is the finding.
 
 ## Scores
 

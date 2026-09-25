@@ -31,6 +31,7 @@ from langchain.agents.middleware._redaction import detect_email
 from langchain.messages import AIMessage, HumanMessage, ToolMessage
 
 import agent_server.agent as agent_mod
+import agent_server.middleware as middleware_mod
 
 
 def identities_in(text: str) -> list[str]:
@@ -44,7 +45,7 @@ def identities_in(text: str) -> list[str]:
     pattern from the one under test is how the pipe defect survived a green
     suite once already.
     """
-    found = re.findall(agent_mod.EMAIL_PATTERN, text)
+    found = re.findall(middleware_mod.EMAIL_PATTERN, text)
     return sorted({m.casefold() for m in found})
 
 HERO = "budi.santoso@pertamina.com"
@@ -69,7 +70,7 @@ def _middleware(monkeypatch, **kwargs) -> list:
     monkeypatch.setattr(agent_mod, "create_deep_agent", fake_create)
     monkeypatch.setattr(agent_mod, "ChatDatabricks", lambda **kw: object())
     monkeypatch.setattr(agent_mod, "build_backend", lambda *a, **kw: object())
-    monkeypatch.setattr(agent_mod, "mcp_tools", no_tools)
+    monkeypatch.setattr(agent_mod, "agent_tools", no_tools)
     asyncio.run(agent_mod.init_agent(**kwargs))
     return captured["middleware"]
 
@@ -146,10 +147,10 @@ def test_detects_email(monkeypatch):
     assert _net(monkeypatch).pii_type == "email"
 
 
-def test_strategy_is_hash_not_redact(monkeypatch):
+def test_strategy_is_mask_not_redact(monkeypatch):
     """`redact` collapses every identity to one token, which would destroy the
     grouping the concentration finding depends on."""
-    assert _net(monkeypatch).strategy == "hash"
+    assert _net(monkeypatch).strategy == "mask"
 
 
 def test_tool_results_are_scrubbed(monkeypatch):
@@ -188,13 +189,13 @@ def test_an_address_never_reaches_the_model(monkeypatch):
 
 
 def test_distinct_people_stay_distinct(monkeypatch):
-    """The property `hash` buys over `redact`: grouping survives."""
+    """The property `mask` buys over `redact`: grouping survives."""
     out = _net(monkeypatch).before_model(
         _tool_state(_rows((HERO, 701), (SECOND, 54))), None)
     assert len(_keys(out["messages"][-1].content)) == 2
 
 
-def test_the_same_person_hashes_the_same_way(monkeypatch):
+def test_the_same_person_masks_the_same_way(monkeypatch):
     out = _net(monkeypatch).before_model(_tool_state(_rows((HERO, 1), (HERO, 2))), None)
     assert len(_keys(out["messages"][-1].content)) == 1, "one person must not split"
 
@@ -251,7 +252,7 @@ def test_a_pipe_separator_is_swallowed_upstream():
 
     This was filed as harmless "while results are JSON". They are not: the
     migration to `system.ai.dbsql` made every successful result a markdown
-    table, and the trap sprang. `agent_server.agent.EMAIL_PATTERN` is the
+    table, and the trap sprang. `agent_server.middleware.EMAIL_PATTERN` is the
     answer; the test below is its guard.
     """
     from langchain.agents.middleware._redaction import detect_email
@@ -265,8 +266,8 @@ def test_our_pattern_stops_at_the_pipe():
     """The one difference from upstream, and the reason for the whole file.
 
     A separator eaten by the match takes the next cell with it, so the same
-    person hashes two ways and the grouping `strategy="hash"` buys is lost.
+    person masks two ways and the grouping `strategy="mask"` buys is lost.
     """
-    assert re.findall(agent_mod.EMAIL_PATTERN, f"{HERO}|701") == [HERO]
+    assert re.findall(middleware_mod.EMAIL_PATTERN, f"{HERO}|701") == [HERO]
     for sep in ("|", ",", '"', " ", ":"):
-        assert re.findall(agent_mod.EMAIL_PATTERN, f"{HERO}{sep}701") == [HERO], sep
+        assert re.findall(middleware_mod.EMAIL_PATTERN, f"{HERO}{sep}701") == [HERO], sep
