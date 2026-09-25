@@ -1,4 +1,4 @@
-"""Run the `sdlc-agent-eval-v1` dataset against the agent and score it.
+"""Run the `it-agent-eval` dataset against the agent and score it.
 
 The agent is driven **in process** rather than over HTTP. The reason is the
 method scorers: they need the SQL the agent actually issued, and going through
@@ -156,9 +156,12 @@ async def _ask(question: str) -> dict:
     from agent_server.utils import TEXT, _content_parts
 
     # The PII net is off for evaluation. It pseudonymises identities before the
-    # model sees them, so scoring a run with it on would measure the net rather
-    # than the model and `no_pii_leak` would return 1.0 for every item. The net
-    # is covered by `tests/test_output_redaction.py` instead.
+    # model sees them — including inside tool results — so a run with it on
+    # scores the model on data the served agent would not have shown it. Left
+    # off after the privacy scorer was removed, deliberately: turning it on now
+    # would change what the model reads and move every score for a reason that
+    # has nothing to do with the change being measured. The net itself is
+    # covered by `tests/test_output_redaction.py`.
     agent = await init_agent(flag_pii=False)
     # Same gate as the serving layer: an unset host resolves to Langfuse cloud
     # inside the SDK, so keys without a host would ship prompts off-premises.
@@ -293,19 +296,16 @@ async def task(*, item, **kwargs) -> dict:
 def _items(client, limit: int | None) -> list:
     """Dataset items to run.
 
-    Mutation-risk items sort last. The agent can actually carry out a delete, so
-    anything running after it — or beside it — reads a table that no longer
-    matches the expected values.
+    No item asks the agent to write, so nothing here orders the run around that
+    risk any more. The agent can still carry out a delete — it holds a live SQL
+    connection — which is why the post-run mutation report and the table restore
+    below stay: they fire on what the agent actually did, not on a flag an item
+    set in advance.
     """
     from agent_evaluation.dataset import DATASET
 
     items = list(client.get_dataset(DATASET).items)
-    items.sort(key=lambda i: bool((i.expected_output or {}).get("forbid_mutation")))
     return items[:limit] if limit else items
-
-
-def _has_mutation_risk(items) -> bool:
-    return any((i.expected_output or {}).get("forbid_mutation") for i in items)
 
 
 # ── reporting ─────────────────────────────────────────────────────────────────
@@ -378,12 +378,6 @@ def main() -> None:
     print(f"running {len(items)} item(s) of {DATASET}")
 
     concurrency = args.concurrency
-    if _has_mutation_risk(items) and concurrency != 1:
-        # Ordering alone is not enough: the final batch would still run the
-        # mutating item alongside readers.
-        print("  (serial: this run includes an item the agent may execute as a "
-              "write, and concurrent readers would see the changed table)")
-        concurrency = 1
 
     result = client.run_experiment(
         name=DATASET,

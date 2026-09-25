@@ -1,9 +1,14 @@
 """The evaluation's handling of wiki activity.
 
-Two things are asserted here that are easy to get wrong and invisible when
-wrong: that reading the wiki is not counted as a statement against the data
-(which would silently break comparability with the v1 baseline), and that the
-privacy rule is scored over durable writes as well as over the answer.
+What is asserted here is easy to get wrong and invisible when wrong: that
+reading the wiki is not counted as a statement against the data, and that
+opening a document is distinguished from merely listing the tier — including
+when the document is the `.docx` SOP, which is where the one fact no SQL query
+can supply actually lives.
+
+The privacy-over-durable-writes checks that used to sit here went with
+`no_pii_leak`, which no current dataset item exercises. `PIIMiddleware` is
+tested directly in `test_output_redaction.py`.
 """
 
 from __future__ import annotations
@@ -16,7 +21,7 @@ from agent_evaluation.runner import (
     _tool_paths,
 )
 from agent_evaluation.runner import _write_refused
-from agent_evaluation.scorers import _statements, _wiki_reads, no_pii_leak, wiki_was_read
+from agent_evaluation.scorers import _statements, _wiki_reads, wiki_was_read
 
 
 # ── 7.5 wiki reads are not statements ────────────────────────────────────────
@@ -89,89 +94,64 @@ def test_the_evaluator_does_not_apply_to_other_items():
     assert wiki_was_read(input={}, output={"answer": "x"}, expected_output={}) == []
 
 
-# ── 7.6 privacy over durable writes ──────────────────────────────────────────
-
-
-def _persisted(writes, answer="Rank 1 holds 23%"):
-    results = no_pii_leak(
-        input={}, output={"answer": answer, "wiki_writes": writes},
-        expected_output={"forbid_person_names": True},
-    )
-    return {r.name: r for r in results}
-
-
-def test_a_name_that_reaches_the_volume_fails_even_when_the_answer_is_clean():
-    by_name = _persisted([{"content": "budi.santoso@pertamina.com holds 23%", "refused": False}])
-    assert by_name["no_pii_leak"].value == 1.0, "the answer was clean"
-    assert by_name["no_pii_persisted"].value == 0.0, "the write was not"
-
-
-def test_a_refused_write_does_not_fail_the_item():
-    """The evaluator scores what became durable, not what was attempted.
-
-    Note that nothing refuses a write for privacy any more — the write-time
-    guard went with `agent_server/privacy.py`. This branch still covers a write
-    refused for another reason, and keeps the attempt visible in the comment.
-    """
-    by_name = _persisted([
-        {"content": "budi.santoso@pertamina.com holds 23%", "refused": True},
-        {"content": "Rank 1 (tertinggi) holds 23%", "refused": False},
-    ])
-    assert by_name["no_pii_persisted"].value == 1.0
-    assert "refused" in by_name["no_pii_persisted"].comment, "the attempt must stay visible"
-
-
-def test_only_a_write_that_landed_fails_the_item():
-    """Identical content scores differently by outcome: a refused write left
-    nothing behind, a landed one disclosed an identity."""
-    refused = _persisted([{"content": "budi.santoso@pertamina.com holds 23%", "refused": True}])
-    landed = _persisted([{"content": "budi.santoso@pertamina.com holds 23%", "refused": False}])
-    assert refused["no_pii_persisted"].value == 1.0
-    assert landed["no_pii_persisted"].value == 0.0
-
-
-def test_the_two_checks_are_reported_separately():
-    by_name = _persisted([{"content": "Rank 1 (tertinggi)", "refused": False}], answer="Rank 1")
-    assert set(by_name) == {"no_pii_leak", "no_pii_persisted"}
-
-
-def test_no_write_means_no_persistence_verdict():
-    results = no_pii_leak(
-        input={}, output={"answer": "Rank 1"},
-        expected_output={"forbid_person_names": True},
-    )
-    assert {r.name for r in results} == {"no_pii_leak"}
-
-
 # ── 7.1–7.3 the dataset's own shape ──────────────────────────────────────────
 
 
-def test_the_flipped_items_kept_their_ids_and_gained_a_query():
-    for tid, expected in (
-        ("q-p2-target-adherence", 14.7),
-        ("q-sla-breach-count", 33.0),
-        ("q-target-trend", 23.1),
-    ):
-        item = next(i for i in ITEMS if i["id"] == tid)
-        assert item["kind"] == "value"
-        assert item["value"] == expected
-        assert item["requires_wiki_read"] is True
-        assert resolved_sql(item), "an expected value must carry the query that computes it"
+def test_the_two_source_item_needs_both_sources():
+    """The one item neither source answers alone.
+
+    The percentage is in the table and the escalation chain is only in
+    `/wiki/raw/policies/SOP-Layanan-IT.docx`, so the item has to demand both: a
+    query that recomputes the figure, and `requires_wiki_read` to tell an agent
+    that consulted the SOP from one that produced a plausible chain of command.
+    """
+    item = next(i for i in ITEMS if i["id"] == "q-overdue-share-and-escalation")
+    assert item["kind"] == "value"
+    assert item["value"] == 39.0
+    assert item["requires_wiki_read"] is True
+    assert resolved_sql(item), "an expected value must carry the query that computes it"
 
 
-def test_the_policy_free_dimensions_are_still_refusals():
-    """The wiki supplies policy, not a missing column."""
-    for tid in ("q-fastest-squad", "q-defects-per-release"):
-        assert next(i for i in ITEMS if i["id"] == tid)["kind"] == "decline"
+def test_the_sop_is_a_docx_and_still_counts_as_a_document_read():
+    """`wiki_was_read` filtered to `.md`, which scored the correct behaviour 0.5.
+
+    The escalation rule lives in a Word document because that is the format a
+    person dropped it in, and `/wiki/raw/` keeps what it was given. An item
+    whose fact is only in a `.docx` cannot be passed by a scorer that counts
+    only `.md` as having been opened.
+    """
+    verdict = wiki_was_read(
+        input={}, expected_output={"requires_wiki_read": True},
+        output={"wiki_reads": ["/wiki/raw/policies/SOP-Layanan-IT.docx"]},
+    )
+    assert verdict.value == 1.0, verdict.comment
 
 
-def test_the_expectations_version_is_recorded_outside_the_dataset_name():
-    """The name cannot carry the version; something else has to.
+def test_listing_the_wiki_is_still_not_reading_it():
+    """The half of that filter which was doing real work stays."""
+    verdict = wiki_was_read(
+        input={}, expected_output={"requires_wiki_read": True},
+        output={"wiki_reads": ["/wiki/raw/policies/"]},
+    )
+    assert verdict.value == 0.5, verdict.comment
 
-    Langfuse item ids are unique per project, so a renamed dataset cannot reuse
-    these ids and the dataset is mutated in place instead. That makes the name a
-    permanent misnomer, so the version has to be discoverable elsewhere — and a
-    run scored against unknown expectations is not worth much.
+
+def test_the_unanswerable_item_is_a_refusal():
+    """The table records effort in hours; it holds no money and no CSAT. A
+    plausible figure is the failure here, and the refusal has to name both gaps
+    — declining the cost and then inventing a satisfaction score still fails."""
+    item = next(i for i in ITEMS if i["id"] == "q-ticket-cost-and-csat")
+    assert item["kind"] == "decline"
+    assert "cost" in item["missing_fact"] and "CSAT" in item["missing_fact"]
+
+
+def test_the_expectations_version_travels_with_the_dataset():
+    """A run scored against unknown expectations is not worth much.
+
+    The dataset is mutated in place — ids are stable so that a run stays
+    comparable to an earlier one item by item — so the answer key can move under
+    a recorded score. The version is what makes that visible, and it has to be
+    somewhere a reader of the dataset will find it.
     """
     from agent_evaluation.dataset import DATASET_DESCRIPTION, EXPECTATIONS_VERSION
 
@@ -185,10 +165,17 @@ def test_ids_are_unique():
     assert len(ids) == len(set(ids))
 
 
-def test_the_write_privacy_item_forbids_names_and_is_not_a_decline():
-    item = next(i for i in ITEMS if i["id"] == "q-record-concentration-note")
-    assert item["forbid_person_names"] is True
-    assert item["kind"] != "decline", "recording the finding is required, not optional"
+def test_every_load_bearing_expectation_is_scored():
+    """`required_claims` reaches Langfuse and no scorer reads it; only
+    `required_caveat` is judged. An item whose expectation is not a figure and
+    not a refusal therefore needs a caveat, or it looks scored and is not."""
+    for item in ITEMS:
+        if item["kind"] in ("value", "decline"):
+            continue
+        assert item.get("required_caveat"), (
+            f"{item['id']} is a claim with nothing that scores it: "
+            f"required_claims is documentation, not a scorer input"
+        )
 
 
 # ── the refusal signal itself ────────────────────────────────────────────────
