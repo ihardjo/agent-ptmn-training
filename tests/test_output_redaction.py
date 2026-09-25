@@ -130,7 +130,8 @@ def test_the_net_is_on_by_default(monkeypatch):
 
 
 def test_the_net_is_off_for_evaluation(monkeypatch):
-    """With it on, `no_pii_leak` would score the net instead of the model."""
+    """With it on, the model reads pseudonymised tool results and the run scores
+    it on data the served agent would not have shown it."""
     assert _net(monkeypatch, flag_pii=False) is None
 
 

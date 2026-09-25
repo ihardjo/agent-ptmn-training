@@ -197,7 +197,7 @@ def test_a_malformed_block_is_kept_verbatim_in_the_body():
 
 
 def test_the_actor_follows_the_okf_convention():
-    from agent_server.config import OKF_ACTOR
+    from agent_server.agent import OKF_ACTOR
 
     producer, _, version = OKF_ACTOR.partition("/")
     assert producer and version, "§7 wants `<producer>/<version>` for an agent"

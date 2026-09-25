@@ -33,6 +33,13 @@ SEED_DIR = REPO_ROOT / "wiki_seed" / "notes"
 # tier is the root. §3 allows a bundle to be a subdirectory, so two is fine.
 SUBDIRS = ("raw", "notes")
 
+# Not part of either bundle. `raw/uploads/` is where the chat's paperclip files
+# what a user attached (see `agent_server/uploads.py`), and an attachment is
+# whatever they sent — a `.md` among them has no reason to carry OKF
+# frontmatter, so walking it here would report someone's document as a
+# conformance failure and make this command cry wolf on every upload.
+EXCLUDED_DIRS = ("uploads",)
+
 
 def seed_documents() -> dict[str, str]:
     """The seed bundle, keyed relative to its own root."""
@@ -76,7 +83,8 @@ def volume_documents() -> dict[str, dict[str, str]] | None:
                 if not e.path:
                     continue
                 if e.is_directory:
-                    pending.append(e.path)
+                    if e.path.rstrip("/").rsplit("/", 1)[-1] not in EXCLUDED_DIRS:
+                        pending.append(e.path)
                 elif e.path.endswith(".md"):
                     documents[e.path[len(base) + 1 :]] = (
                         w.files.download(e.path).contents.read().decode("utf-8")

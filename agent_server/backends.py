@@ -59,7 +59,6 @@ from deepagents.backends.utils import (
 )
 from deepagents.middleware.filesystem import FilesystemPermission
 
-from agent_server.config import OKF_ACTOR
 from agent_server.documents import UnreadableDocumentError, decode
 from agent_server.okf import ensure_conformant, is_reserved
 from agent_server.skills import SKILLS_MOUNT
@@ -210,6 +209,25 @@ class VolumeBackend(BackendProtocol):
         except Exception as exc:
             return WriteResult(error=self._describe(exc, target, "write"))
         return WriteResult(path=file_path)
+
+    def upload_bytes(self, file_path: str, data: bytes) -> str:
+        """Write raw bytes, bypassing the text and OKF paths. Returns the Volume path.
+
+        Not part of `BackendProtocol`, and not reachable by the agent: this is
+        the ingest side, used by the chat upload route in `routes.py`. Two
+        reasons it cannot go through `write`. A `.docx` is a ZIP, so decoding it
+        to UTF-8 to write it would corrupt it. And `write` applies
+        `_as_okf`, which would stamp OKF frontmatter onto a markdown file a
+        person attached — turning their document into a malformed concept
+        rather than leaving it as the source it is.
+
+        Escapes raise rather than returning an error result, because the caller
+        is a request handler that owes the user a status code and this is the
+        only signal that says which one.
+        """
+        target = self._resolve(file_path)
+        self._client.files.upload(target, io.BytesIO(data), overwrite=True)
+        return target
 
     def edit(
         self,
@@ -377,7 +395,7 @@ WIKI_SOURCE_SUBDIR = "raw"
 WIKI_NOTES_SUBDIR = "notes"
 
 
-def wiki_routes(client: Optional[Any] = None) -> dict[str, Any]:
+def wiki_routes(client: Optional[Any] = None, okf_actor: Optional[str] = None) -> dict[str, Any]:
     """The two wiki routes, or nothing when the Volume is not configured.
 
     Both tiers are subdirectories of a single Volume, reached with the same
@@ -395,6 +413,10 @@ def wiki_routes(client: Optional[Any] = None) -> dict[str, Any]:
     `WorkspaceClient` is not free or reliably fast — a wrong host sends the SDK
     into an authentication retry that blocks rather than raising — so the
     construction is guarded and a failure degrades this run to no tier.
+
+    `okf_actor` is the caller's identity to stamp onto notes it writes; this
+    module has no opinion on what the agent is, so it takes the value rather
+    than computing it.
     """
     volume = os.environ.get("DATABRICKS_WIKI_VOLUME")
     if not volume:
@@ -431,12 +453,49 @@ def wiki_routes(client: Optional[Any] = None) -> dict[str, Any]:
             # The write path supplies OKF frontmatter itself. Asking the prompt
             # for it would make conformance a matter of good behaviour; this
             # makes it a property of the tier.
-            okf_actor=OKF_ACTOR,
+            okf_actor=okf_actor,
         ),
     }
 
 
-def build_backend(wiki_client: Optional[Any] = None) -> CompositeBackend:
+def uploads_backend(client: Optional[Any] = None) -> Optional[VolumeBackend]:
+    """The backend the chat upload route writes through, or None when unconfigured.
+
+    The Volume's `raw/` subdirectory, with **no** `okf_actor`: an attachment is
+    a source document, and stamping OKF frontmatter onto someone's markdown
+    would turn it into a malformed concept rather than leaving it as what they
+    sent.
+
+    Deliberately a separate instance from the one `wiki_routes` mounts, not the
+    same object reached through the agent's backend. The agent's route is behind
+    the `/wiki/raw/**` write deny; this one is not, and that difference should
+    be visible as two constructions rather than hidden in a permission check
+    that only applies on one path. Uploading is a person putting a file in the
+    landing tree — the same act the tier already exists for — and the agent
+    still cannot write there.
+
+    Built per request rather than cached. An upload is rare and the client
+    construction is the same one `wiki_routes` does; a module-level singleton
+    would only add a state to get wrong when the environment changes under a
+    reload.
+    """
+    volume = os.environ.get("DATABRICKS_WIKI_VOLUME")
+    if not volume:
+        return None
+    if client is None:
+        try:
+            client = jakarta_workspace_client()
+        except Exception:
+            logger.warning("Could not build a client for uploads.", exc_info=True)
+            return None
+    if client is None:
+        return None
+    return VolumeBackend(client, volume, WIKI_SOURCE_SUBDIR)
+
+
+def build_backend(
+    wiki_client: Optional[Any] = None, okf_actor: Optional[str] = None
+) -> CompositeBackend:
     """The agent's filesystem, tiered so a path prefix states a file's lifetime,
     who wrote it, and whether the agent may write there.
 
@@ -456,7 +515,7 @@ def build_backend(wiki_client: Optional[Any] = None) -> CompositeBackend:
     to scratch, so a file only becomes durable at a prefix that says which of
     the two wiki tiers it belongs to.
     """
-    routes: dict[str, Any] = wiki_routes(wiki_client)
+    routes: dict[str, Any] = wiki_routes(wiki_client, okf_actor=okf_actor)
     logger.info("Filesystem tiers: / (scratch), %s", ", ".join(sorted(routes)) or "none")
     return CompositeBackend(default=StateBackend(), routes=routes)
 
