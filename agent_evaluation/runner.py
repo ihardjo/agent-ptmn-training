@@ -65,7 +65,7 @@ def _langfuse():
 # Filtering on the argument's shape was considered and rejected: SQL is just
 # text, so any heuristic both admits prose that looks like SQL and rejects SQL
 # that does not.
-SQL_TOOLS = frozenset({"execute_sql", "poll_sql_result"})
+SQL_TOOLS = frozenset({"execute_sql", "execute_sql_read_only", "poll_sql_result"})
 
 # The filesystem tools, split by what they tell the evaluation. Reads say the
 # agent consulted the wiki rather than inventing a policy fact; writes to the

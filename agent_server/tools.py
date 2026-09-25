@@ -14,23 +14,20 @@ logger = logging.getLogger(__name__)
 
 @tool
 def get_current_time() -> str:
-    """The current UTC time, ISO-8601. Use this whenever the answer depends on
-    what time it is now — you have no clock of your own."""
+    """Get the current UTC time, ISO-8601."""
     return datetime.now(timezone.utc).isoformat()
 
 
 @tool
 def days_until(iso_date: str) -> int:
-    """Whole days from today until the given date, negative if it has passed.
-
-    `iso_date` is YYYY-MM-DD. Use this rather than counting by hand."""
+    """Get whole days from today until the given date, negative if it has passed."""
     target = datetime.fromisoformat(iso_date).date()
     return (target - datetime.now(timezone.utc).date()).days
 
 
 @tool
 def roll_dice(sides: int = 6) -> int:
-    """Roll a die with the given number of sides."""
+    """Roll a dice with the given number of sides."""
     return random.randint(1, sides)
 
 
@@ -59,7 +56,7 @@ def jakarta_workspace_client() -> Optional[WorkspaceClient]:
 
 
 def init_mcp_client() -> Optional[DatabricksMultiServerMCPClient]:
-    """The Jakarta managed SQL MCP server (system.ai.dbsql), 
+    """The Jakarta managed SQL MCP server (DBSQL MCP Server), 
     or None when it is not configured.
 
     SQL is the only server: `system.ai` functions are Unity Catalog UDFs, so
@@ -73,12 +70,10 @@ def init_mcp_client() -> Optional[DatabricksMultiServerMCPClient]:
     return DatabricksMultiServerMCPClient(
         [
             DatabricksMCPServer(
-                name="dbsql",
-                url=f"{os.environ['DATABRICKS_JAKARTA_HOST']}/ai-gateway/mcp-services/system.ai.dbsql",
+                name="DBSQL MCP Server",
+                url=f"{os.environ['DATABRICKS_JAKARTA_HOST']}/api/2.0/mcp/sql",
                 workspace_client=jakarta,
-                # A statement that fails comes back as a normal result whose
-                # payload carries the error, so this only covers transport
-                # faults — leaving those to the model beats ending the turn.
+                # Covers transport faults to prevent ending the turn prematurely.
                 handle_tool_error=True,
             ),
         ]

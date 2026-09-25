@@ -20,9 +20,11 @@ from deepagents.backends import CompositeBackend, FilesystemBackend, StateBacken
 from deepagents.middleware.filesystem import FilesystemPermission
 
 from agent_server.backends import VolumeBackend
+
+# TODO 3a: Tool Selection (Databricks Managed MCP)
 from agent_server.tools import init_mcp_client, jakarta_workspace_client
 
-# TODO 3: Tool Selection (Manually Defined Tools)
+# TODO 3a: Tool Selection (Manually Defined Tools)
 from agent_server.tools import get_current_time, days_until, roll_dice 
 
 logger = logging.getLogger(__name__)
@@ -43,12 +45,14 @@ def _prompt(name: str) -> str:
     return re.sub(r"\A(\s*<!--.*?-->\s*)+", "", text, flags=re.S)
 
 
+# TODO 2b. System Prompt
 # Read once at import, as constants would be.
 #
 # `system_prompt.md` is standing: it applies to every turn. The other two are
 # conditional and are why they are separate files rather than sections of it —
-# each is false most of the time. `no_sql_notice.md` would otherwise tell the
-# agent the table is unreachable on runs where it is not, and
+# each is false most of the time. 
+# `no_sql_notice.md` would otherwise tell the agent the table is unreachable on runs 
+# where it is not
 # `provenance_nudge.md` is a mid-turn reply to an answer that does not exist
 # yet when a system prompt is assembled.
 SYSTEM_PROMPT = _prompt("system_prompt.md")
@@ -66,10 +70,16 @@ WIKI_NOTES_MOUNT = "/wiki/notes/"
 WIKI_SOURCE_SUBDIR = "raw"
 WIKI_NOTES_SUBDIR = "notes"
 
-# Chosen by measurement, not preference: of the open-weight endpoints served
-# here, this is the one that actually uses the planning tool. See design
-# Decision 9 of `migrate-to-deep-agent`.
-MODEL_ENDPOINT = "databricks-glm-5-3-flash" # TODO 1. LLM Selection
+# TODO 1. LLM Selection
+# Choose between: 
+# "databricks-glm-5-3-flash", "databricks-kimi-k3", "databricks-claude-opus-5",
+# "databricks-gpt-5-6-sol", "databricks-grok-4-6"
+MODEL_ENDPOINT = "databricks-glm-5-3-flash"
+
+# Turning reasoning off for using GPT 5-6 or GPT 6 model families.
+MODEL_KWARGS = ({"extra_params": {"reasoning_effort": "none"}}
+                if "gpt-5-6" in MODEL_ENDPOINT or "gpt-6" in MODEL_ENDPOINT
+                else {})
 
 # OKF §7 actor convention: `<producer>/<version>` for an agent. Recorded in
 # `generated.by` on every note the agent writes, so a reader can tell which
@@ -270,7 +280,7 @@ def stage_skills(names: Union[str, Sequence[str]]) -> Optional[Path]:
 # The SQL tools, named so a turn's answer can be traced back to whether any of
 # them actually ran. Kept beside `UNUSABLE_BUILTINS` because both describe what
 # the tool list means rather than what it contains.
-SQL_TOOL_NAMES = frozenset({"execute_sql", "poll_sql_result"})
+SQL_TOOL_NAMES = frozenset({"execute_sql", "execute_sql_read_only", "poll_sql_result"})
 
 # Edit these two lines to change what a reader sees; nothing else depends on
 # their wording.
@@ -509,6 +519,26 @@ async def mark_skill_reads(request, handler):
     return response
 
 
+@wrap_tool_call
+async def flatten_tool_result_blocks(request, handler):
+    """Return a tool result as text rather than as content blocks.
+
+    `langchain-mcp-adapters` returns `[{"type": "text", "text": ..., "id": "lc_..."}]`.
+    Most endpoints ignore the extra `id`; the Anthropic-backed ones reject the
+    whole turn over it. Joining here is what keeps `MODEL_ENDPOINT` a one-line
+    switch, and costs nothing on the endpoints that tolerated the blocks.
+    """
+    response = await handler(request)
+    content = getattr(response, "content", None)
+    if isinstance(content, list):
+        response.content = "\n".join(
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+    return response
+
+
 def wiki_routes(client: Optional[Any] = None) -> dict[str, Any]:
     """The two wiki routes, or nothing when the Volume is not configured.
 
@@ -633,6 +663,7 @@ async def init_agent(flag_pii: bool = True, show_provenance: bool = True):
 
     middlewares = [
         TodoListMiddleware(),
+        flatten_tool_result_blocks,
         retry_rate_limited,
         mark_skill_reads,
         hide_unusable_tools,
@@ -655,13 +686,10 @@ async def init_agent(flag_pii: bool = True, show_provenance: bool = True):
             )
         )
 
-    # TODO 3: Tool Selection (Databricks Managed MCP)
+    # TODO 3b: Tool Selection (Databricks Managed MCP)
     # TOOLS_ALL                              every tool the SQL server offers
     # ["execute_sql", "poll_sql_result"]     only the ones named (EXAMPLE ONLY, not for use)
     # []                                     none; the agent cannot read the table
-    #
-    # Actually, execute_sql and poll_sql_result CANNOT be used alone due to a slow SQL 
-    # statement returns a statement_id that only poll_sql_result can collect.
     sql_tools = await mcp_tools(TOOLS_ALL)
 
     # Tell the model when it has no way to run a query due to unreachable server  
@@ -671,6 +699,8 @@ async def init_agent(flag_pii: bool = True, show_provenance: bool = True):
         if any(getattr(t, "name", None) == "execute_sql" for t in sql_tools)
         else "no tool that can run a query was selected for this run"
     )
+
+    # TODO 2c: System Prompt
     system_prompt = SYSTEM_PROMPT
     if no_sql:
         system_prompt += NO_SQL_NOTICE.format(reason=no_sql)
@@ -682,10 +712,10 @@ async def init_agent(flag_pii: bool = True, show_provenance: bool = True):
     skills_root = stage_skills(SKILLS_ALL)
 
     return create_deep_agent(
-        model=ChatDatabricks(endpoint=MODEL_ENDPOINT),
+        model=ChatDatabricks(endpoint=MODEL_ENDPOINT, **MODEL_KWARGS),
         system_prompt=system_prompt,
         tools=[
-            # TODO 3: Tool Selection (Manually Defined Tools)
+            # TODO 3c: Tool Selection (Manually Defined Tools)
             # (a) Manually Defined Tools: get_current_time, days_until, roll_dice
             get_current_time,
 
