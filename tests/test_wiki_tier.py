@@ -11,14 +11,14 @@ from __future__ import annotations
 import pytest
 from deepagents.middleware.filesystem import _check_fs_permission
 
-from agent_server.agent import (
-    SKILLS_MOUNT,
+from agent_server.backends import (
     WIKI_NOTES_MOUNT,
     WIKI_SOURCE_MOUNT,
     build_backend,
     filesystem_permissions,
     wiki_routes,
 )
+from agent_server.skills import SKILLS_MOUNT
 
 
 @pytest.fixture
@@ -71,7 +71,13 @@ def test_no_wiki_routes_without_the_volume_variable(monkeypatch):
 def test_no_wiki_routes_without_jakarta_credentials(monkeypatch):
     """The Volume is reached with the SQL tools' credential; absent it, no tier."""
     monkeypatch.setenv("DATABRICKS_WIKI_VOLUME", "/Volumes/c/s/v")
-    for key in ("DATABRICKS_JAKARTA_HOST", "DATABRICKS_JAKARTA_CLIENT_ID", "DATABRICKS_JAKARTA_CLIENT_SECRET"):
+    for key in (
+        "DATABRICKS_JAKARTA_HOST",
+        "DATABRICKS_JAKARTA_CLIENT_ID",
+        "DATABRICKS_JAKARTA_CLIENT_SECRET",
+        # The local-only profile fallback is a credential too.
+        "DATABRICKS_JAKARTA_PROFILE",
+    ):
         monkeypatch.delenv(key, raising=False)
     assert wiki_routes() == {}
 
@@ -80,7 +86,7 @@ def test_a_client_that_cannot_be_built_degrades_to_no_tier(monkeypatch):
     """A failure here must cost the tier, not the process."""
     monkeypatch.setenv("DATABRICKS_WIKI_VOLUME", "/Volumes/c/s/v")
     monkeypatch.setattr(
-        "agent_server.agent.jakarta_workspace_client",
+        "agent_server.backends.jakarta_workspace_client",
         lambda: (_ for _ in ()).throw(RuntimeError("bad host")),
     )
     assert wiki_routes() == {}

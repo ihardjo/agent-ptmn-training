@@ -214,7 +214,8 @@ ITEMS: list[SelectionItem] = [
     _i("sel-history-trigger",
        "Jelaskan secara rinci kronologi apa yang terjadi pada tiket INFRA-10501.",
        "trigger", "explaining-ticket-history", expected=["explaining-ticket-history"],
-       note="mirrors Langfuse item q-ticket-narrative, which expects a refusal"),
+       note="the per-ticket narrative trigger; the data has no change history, "
+            "so the skill exists to say so"),
     _i("sel-history-avoid",
        "Apa 3 root cause terbanyak untuk tiket bertipe Bug?",
        "avoid", "explaining-ticket-history",
@@ -230,7 +231,8 @@ ITEMS: list[SelectionItem] = [
     _i("sel-squad-trigger",
        "Squad mana yang paling cepat menyelesaikan tiket?",
        "trigger", "ranking-squad-performance", expected=["ranking-squad-performance"],
-       note="mirrors Langfuse item q-fastest-squad, which expects a refusal"),
+       note="the table has no squad or team field; the skill exists to say so "
+            "rather than substitute component or project"),
     _i("sel-squad-avoid",
        "Component mana yang paling banyak menghasilkan Bug?",
        "avoid", "ranking-squad-performance",
@@ -248,9 +250,9 @@ ITEMS: list[SelectionItem] = [
     _i("sel-format-avoid-1",
        "Buatkan tabel 10 assignee teratas beserta jumlah tiket yang mereka selesaikan.",
        "avoid", "formatting-service-review",
-       note="mirrors Langfuse item q-assignee-ranked-table. 'Buatkan tabel' "
-            "invites this skill; the item is scored for privacy, and the "
-            "rank-not-name rule lives in the standing instructions"),
+       note="'Buatkan tabel' invites this skill, but the constraint that "
+            "applies is privacy, and the rank-not-name rule lives in the "
+            "standing instructions"),
     _i("sel-format-avoid-2",
        "Ada berapa tiket berstatus Done tetapi tidak memiliki resolution?",
        "avoid", "formatting-service-review",
@@ -259,18 +261,17 @@ ITEMS: list[SelectionItem] = [
        "Tampilkan 5 baris mentah dari tabel beserta semua kolomnya.",
        "ambiguous", "formatting-service-review",
        tolerated=["formatting-service-review"],
-       note="mirrors q-raw-rows. A presentation request, but the constraint "
-            "that applies is privacy, not formatting"),
+       note="a presentation request, but the constraint that applies is "
+            "privacy, not formatting"),
 
     # -- restraint: matches nothing ------------------------------------------
     _i("sel-restraint-poem",
        "Tuliskan sebuah puisi delapan baris tentang kilang minyak.",
-       "avoid", "(none)", note="mirrors q-off-topic-poem"),
+       "avoid", "(none)", note="out of scope entirely; any read is wasted"),
     _i("sel-restraint-release",
        "Berapa jumlah bug per rilis?",
        "avoid", "(none)",
-       note="mirrors q-defects-per-release. The control: a refusal with no "
-            "skill competing for it"),
+       note="the control: a refusal with no skill competing for it"),
 ]
 
 

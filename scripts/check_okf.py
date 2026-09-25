@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 REPO_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=REPO_ROOT / ".env", override=True)
 
-SEED_DIR = REPO_ROOT / "wiki_seed" / "raw"
+SEED_DIR = REPO_ROOT / "wiki_seed" / "notes"
 
 # Each tier is its own bundle, checked separately. They are not one bundle with
 # two subdirectories, for two reasons: `/wiki/` itself is not a route, so a
@@ -32,6 +32,13 @@ SEED_DIR = REPO_ROOT / "wiki_seed" / "raw"
 # cross-links are bundle-relative (`/policies/...`), which only resolves if the
 # tier is the root. §3 allows a bundle to be a subdirectory, so two is fine.
 SUBDIRS = ("raw", "notes")
+
+# Not part of either bundle. `raw/uploads/` is where the chat's paperclip files
+# what a user attached (see `agent_server/uploads.py`), and an attachment is
+# whatever they sent — a `.md` among them has no reason to carry OKF
+# frontmatter, so walking it here would report someone's document as a
+# conformance failure and make this command cry wolf on every upload.
+EXCLUDED_DIRS = ("uploads",)
 
 
 def seed_documents() -> dict[str, str]:
@@ -48,18 +55,18 @@ def volume_documents() -> dict[str, dict[str, str]] | None:
     Returns None when the Volume is not reachable, which is a supported state
     rather than a failure.
     """
-    from databricks.sdk import WorkspaceClient
+    # Built the way the agent builds it, so `DATABRICKS_JAKARTA_PROFILE` works
+    # here too — a laptop whose workspace has no service principal yet would
+    # otherwise report both tiers empty rather than saying it could not look.
+    from agent_server.clients import jakarta_workspace_client
 
     volume = os.environ.get("DATABRICKS_WIKI_VOLUME")
-    host = os.environ.get("DATABRICKS_JAKARTA_HOST")
-    client_id = os.environ.get("DATABRICKS_JAKARTA_CLIENT_ID")
-    client_secret = os.environ.get("DATABRICKS_JAKARTA_CLIENT_SECRET")
-    if not (volume and host and client_id and client_secret):
+    if not volume:
         return None
 
-    w = WorkspaceClient(
-        host=host, client_id=client_id, client_secret=client_secret, auth_type="oauth-m2m"
-    )
+    w = jakarta_workspace_client()
+    if w is None:
+        return None
     bundles: dict[str, dict[str, str]] = {}
     for subdir in SUBDIRS:
         base = f"{volume.rstrip('/')}/{subdir}"
@@ -76,7 +83,8 @@ def volume_documents() -> dict[str, dict[str, str]] | None:
                 if not e.path:
                     continue
                 if e.is_directory:
-                    pending.append(e.path)
+                    if e.path.rstrip("/").rsplit("/", 1)[-1] not in EXCLUDED_DIRS:
+                        pending.append(e.path)
                 elif e.path.endswith(".md"):
                     documents[e.path[len(base) + 1 :]] = (
                         w.files.download(e.path).contents.read().decode("utf-8")

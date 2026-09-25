@@ -1,4 +1,4 @@
-"""Deterministic generator for `workshop_ai_platform.example.sdlc_tickets`.
+"""Deterministic generator for `workshop_ai_platform.default.sdlc_tickets`.
 
 The workshop's training table is not sample data. Its interesting properties are
 designed and recorded, because downstream evaluation derives ground truth from
@@ -591,7 +591,7 @@ def main() -> None:
     ap.add_argument("--out", help="write rows as JSONL")
     ap.add_argument("--print-ddl", action="store_true")
     ap.add_argument("--table",
-                    default="workshop_ai_platform.example.sdlc_tickets")
+                    default="workshop_ai_platform.default.sdlc_tickets")
     args = ap.parse_args()
 
     if args.print_ddl:

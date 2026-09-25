@@ -11,6 +11,11 @@ dependencies = [
     "fastapi>=0.141.1",
     "uvicorn>=0.52.4",
     "starlette>=0.41.0",   # BaseHTTPMiddleware, imported directly by start_server
+    # Transitive until now. FastAPI parses multipart bodies only when this is
+    # installed, and `POST /files/upload` takes one — without it the route
+    # raises at import time rather than when a file is attached, which is at
+    # least loud, but the chat's paperclip is the feature that goes away.
+    "python-multipart>=0.0.20",
     "pydantic>=2.11",      # request/response models
     # Floor raised to the version whose reasoning-block serialization
     # agent_server/utils.py parses. Below this the streaming translation of

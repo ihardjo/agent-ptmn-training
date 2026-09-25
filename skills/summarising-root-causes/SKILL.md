@@ -22,7 +22,7 @@ Establish the population before grouping, every time:
 SELECT ticket_type,
        COUNT(*)                           AS rows,
        COUNT(`Custom Field (Root Cause)`) AS with_cause
-FROM workshop_ai_platform.example.sdlc_tickets
+FROM workshop_ai_platform.default.sdlc_tickets
 GROUP BY ticket_type
 ORDER BY rows DESC
 ```
@@ -46,7 +46,7 @@ The gap between first and second can be a handful of tickets out of hundreds.
 SELECT `Custom Field (Root Cause)` AS cause,
        COUNT(*)                    AS tickets,
        ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 1) AS pct
-FROM workshop_ai_platform.example.sdlc_tickets
+FROM workshop_ai_platform.default.sdlc_tickets
 WHERE `Custom Field (Root Cause)` IS NOT NULL
 GROUP BY `Custom Field (Root Cause)`
 ORDER BY tickets DESC

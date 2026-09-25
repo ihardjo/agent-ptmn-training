@@ -169,6 +169,28 @@ class ProcessManager:
         shutil.rmtree("temp-app-templates", ignore_errors=True)
         return True
 
+    def apply_overlay(self):
+        """This repo's changes to the cloned template. See frontend_overlay/README.md.
+
+        Runs on every start, not only after a clone: the clone is cached between
+        runs, and a template that has drifted has to be caught before the app
+        serves a paperclip that does nothing. It is idempotent — a second run
+        applies zero patches.
+        """
+        from scripts.overlay import OverlayError, apply
+
+        try:
+            applied = apply(Path("e2e-chatbot-app-next"))
+        except OverlayError as error:
+            print("ERROR: the chat template has moved under this repo's overlay.\n")
+            print(f"  {error}\n")
+            print("  Refusing to start. The upload button is present in the UI whether or not")
+            print("  it works, so starting anyway would look exactly like success.")
+            return False
+        if applied:
+            print(f"Applied {applied} overlay patch(es) to e2e-chatbot-app-next.")
+        return True
+
     def start_process(self, cmd, name, log_file, patterns, cwd=None):
         print(f"Starting {name}...")
         process = subprocess.Popen(
@@ -218,8 +240,15 @@ class ProcessManager:
             if not self.clone_frontend_if_needed():
                 print("WARNING: Failed to clone frontend. Continuing with backend only.")
                 self.no_ui = True
+            elif not self.apply_overlay():
+                # NOT a warning, and NOT a fallback to the backend alone. A drifted
+                # template still renders the paperclip, so serving it would look
+                # like success to everyone except the user who attaches a file.
+                sys.exit(1)
             else:
-                # Set API_PROXY environment variable for frontend to connect to backend
+                # Set API_PROXY environment variable for frontend to connect to backend.
+                # The overlay's files.ts also reads it, taking the origin and calling
+                # /files/upload on it.
                 os.environ["API_PROXY"] = f"http://localhost:{self.port}/invocations"
 
         # Open log files

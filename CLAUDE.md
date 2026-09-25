@@ -73,8 +73,12 @@ agent_server/
   backends.py       ← VolumeBackend: the /wiki/ tier over the UC Files API
   okf.py            ← Open Knowledge Format parsing, conformance, conformant writes
   privacy.py        ← The person-name set the write guard and the eval both use
+  uploads.py        ← Validating a chat attachment and filing it on the Volume
   utils.py          ← Shared helpers (per-user workspace client, auth)
   start_server.py   ← FastAPI app + uvicorn entrypoint, chat proxy middleware
+frontend_overlay/   ← This repo's changes to the sparse-cloned chat template
+  README.md         ← What is patched, why, and how to re-pin against upstream
+  server/src/routes/files.ts ← New: forwards uploads to the FastAPI backend
 wiki_seed/          ← Committed OKF bundle uploaded to the wiki Volume
 skills/             ← The agent's skill menu, mounted read-only at /skills/
   REGISTRY.md       ← Purpose, owner, version, dependencies, eval status per skill
@@ -86,6 +90,7 @@ scripts/
   preflight.py      ← Pre-deploy checks
   discover_tools.py ← Lists available MCP tools from Databricks
   seed_wiki.py      ← Uploads wiki_seed/ to the Volume's raw/ tree
+  overlay.py        ← Applies frontend_overlay/ to the clone; fails loudly on drift
   check_okf.py      ← Checks the seed and the Volume for OKF conformance
   check_skills.py   ← Checks the skills tier for authoring-standard conformance
 app.yaml            ← Databricks Apps config — used by UI/Git deploys
@@ -97,7 +102,7 @@ pyproject.toml      ← Dependencies and uv script entry points
 
 ### Key Architectural Concepts
 
-**Plain FastAPI serving** — `start_server.py` builds a `FastAPI` app, mounts `routes.py`, and adds `ChatProxyMiddleware` to proxy UI paths to the chat app on `CHAT_APP_PORT`. There is no MLflow `AgentServer`, no `@invoke`/`@stream` decorators, and no `ResponsesAgent` types. Routes: `POST /v1/chat/completions` (primary, OpenAI-compatible), `POST /invocations` (compatibility shim), `GET /health`.
+**Plain FastAPI serving** — `start_server.py` builds a `FastAPI` app, mounts `routes.py`, and adds `ChatProxyMiddleware` to proxy UI paths to the chat app on `CHAT_APP_PORT`. There is no MLflow `AgentServer`, no `@invoke`/`@stream` decorators, and no `ResponsesAgent` types. Routes: `POST /v1/chat/completions` (primary, OpenAI-compatible), `POST /invocations` (compatibility shim), `POST /files/upload` (chat attachments), `GET /health`.
 
 **`agent.py` is the single customization point** — add tools via `@tool` decorator, extend the LangGraph graph, or swap in MCP server tools.
 
@@ -119,8 +124,16 @@ may write there. Built in `agent_server/agent.py:build_backend()`:
 |---|---|---|---|
 | `/` | the thread | the agent | yes (scratch, discarded) |
 | `/skills/` | a merge | people, via the repo | no — deny rule |
-| `/wiki/raw/` | a sync | people, via OpenWiki | no — deny rule |
+| `/wiki/raw/` | a sync | people, via OpenWiki or the chat paperclip | no — deny rule |
 | `/wiki/notes/` | durable | the agent | yes |
+
+Chat attachments land under `/wiki/raw/uploads/<session>/` — the landing tree is
+where people put things, and attaching a file is a person putting one there. The
+agent still **cannot write** to `/wiki/raw/`: the upload route is server-side
+code holding its own `VolumeBackend` (`uploads_backend()`), so it is not subject
+to the agent's `FilesystemPermission` rules and the deny rule is unchanged.
+`raw/uploads/` is excluded from the `check-okf` walk — an attachment is whatever
+the user sent and owes the bundle no frontmatter.
 
 Both `/wiki/` prefixes are subdirectories of **one** Unity Catalog Volume in the
 Jakarta workspace, reached over the Files API because Databricks Apps have no
@@ -142,6 +155,23 @@ identified in a trace by the `/skills/` **path prefix**, not by tool name:
 Each tier is an **OKF v0.2** bundle (markdown + YAML frontmatter). The notes
 write path supplies `type` and `generated` itself rather than asking the model
 for them, so the bundle stays conformant by construction.
+
+**The chat UI overlay** — the chat UI is Databricks' stock `e2e-chatbot-app-next`,
+sparse-cloned by `uv run start-app` and gitignored, so it is not vendored and
+cannot be edited in place. `frontend_overlay/` holds this repo's changes to it
+and `scripts/overlay.py` re-applies them on every start. Two things are fixed:
+the template ships the whole file-upload path with **no attach button and no
+server route**, and it renders every tool call as its own expanded card, which
+buries the answer under a dozen `read_file`s.
+
+**Drift fails loudly, by design.** Every patch is anchored, the anchor is
+checked before anything is written, and a template whose text has moved stops
+the startup naming the file and the anchor — `apply_overlay()` returns False and
+`start_app.py` calls `sys.exit(1)` rather than falling back to the backend
+alone. A patch that silently no-ops leaves the paperclip visibly present and
+quietly broken, which is indistinguishable from success until a user attaches a
+file. Re-pinning (`TEMPLATE_COMMIT`) is a human job; see
+`frontend_overlay/README.md`.
 
 **Environment variables** (set in `app.yaml` for the deployed app, in `.env` for local):
 - `CHAT_APP_PORT` / `CHAT_PROXY_TIMEOUT_SECONDS` / `API_PROXY` — chat UI proxy wiring

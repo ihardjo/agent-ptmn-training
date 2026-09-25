@@ -2,11 +2,12 @@ import logging
 import os
 from typing import Any, AsyncGenerator
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from langfuse.langchain import CallbackHandler
 
 from agent_server.agent import init_agent
+from agent_server.skills import skill_files
 from agent_server.models import (
     AssistantMessage,
     ChatCompletionChoice,
@@ -49,9 +50,17 @@ def trace_config(session_id: str | None = None) -> dict:
 
 
 def agent_stream(agent: Any, messages: list, session_id: str | None):
-    """The agent's event stream for one request."""
+    """The agent's event stream for one request.
+
+    `files=` seeds the skills tier into this turn's state: `StateBackend`
+    holds only graph state, so this is how the model sees skill content it
+    never wrote (see `skill_files()` in `agent.py`).
+    """
     return agent.astream(
-        input={"messages": [{"role": m.role, "content": normalize_content(m.content)} for m in messages]},
+        input={
+            "messages": [{"role": m.role, "content": normalize_content(m.content)} for m in messages],
+            "files": skill_files(),
+        },
         stream_mode=["updates", "messages"],
         config=trace_config(session_id),
     )
@@ -124,3 +133,71 @@ async def invocations_compat(body: dict, http_request: Request):
         return sse_response(stream_to_responses_api_chunks(stream, item_id=item_id))
 
     return {"output": await collect_response_output(stream, item_id=item_id)}
+
+
+@router.post("/files/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    session: str = Form(default=""),
+):
+    """Take one file from the chat and write it to the wiki Volume.
+
+    The chat UI's paperclip calls `POST /api/files/upload` on the Node app,
+    which forwards the multipart body here untouched (see `frontend_overlay/`).
+    Nothing is parsed twice: this is the only place that holds an opinion about
+    what a valid upload is.
+
+    The response shape is the chat template's, not ours: its client
+    destructures `{url, pathname, contentType}` and shows `pathname` on the
+    attachment chip. `url` is the agent-visible path and is informational —
+    nothing fetches it, because the bytes are already where the agent reads.
+
+    A refusal returns 400 with the reason under `error`, which is the field the
+    template's client passes straight to a toast. The user sees the sentence,
+    not a status code.
+    """
+    from agent_server.backends import uploads_backend
+    from agent_server.uploads import (
+        UploadRejected,
+        agent_path,
+        check_name,
+        check_size,
+        store,
+    )
+
+    try:
+        name = check_name(file.filename or "")
+        data = await file.read()
+        check_size(name, len(data))
+    except UploadRejected as rejected:
+        # 400 and not 422: this is a decision about the file, not a malformed
+        # request, and the sentence is meant for the person who chose it.
+        raise HTTPException(status_code=400, detail={"error": str(rejected)})
+
+    backend = uploads_backend()
+    if backend is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "Attachments need the wiki Volume, and this server has none "
+                "configured. Set DATABRICKS_WIKI_VOLUME."
+            },
+        )
+
+    try:
+        stored = store(backend, session, name, data)
+    except Exception as exc:
+        logger.exception("upload failed for %s", name)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": f"Could not write `{name}` to the wiki Volume: {exc}"},
+        )
+
+    visible = agent_path(session, name)
+    logger.info("stored upload %s (%d bytes) at %s", name, stored.bytes_written, visible)
+    return {
+        "url": visible,
+        "pathname": stored.filename,
+        "contentType": file.content_type or "text/plain",
+        "bytes": stored.bytes_written,
+    }

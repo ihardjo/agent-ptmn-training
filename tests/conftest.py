@@ -141,7 +141,7 @@ def source(client, volume_root):
 def notes(client, volume_root):
     """The agent-writable notes tier: conformant writes on.
 
-    Configured the way `agent_server.agent.wiki_routes` configures it, so a test
+    Configured the way `agent_server.backends.wiki_routes` configures it, so a test
     cannot pass against a tier the agent never actually gets.
     """
     from agent_server.backends import VolumeBackend

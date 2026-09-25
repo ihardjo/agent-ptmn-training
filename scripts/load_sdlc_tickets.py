@@ -1,4 +1,4 @@
-"""Create and load `workshop_ai_platform.example.sdlc_tickets` in Jakarta.
+"""Create and load `workshop_ai_platform.default.sdlc_tickets` in Jakarta.
 
 Committed alongside the generator so the table is reproducible end to end:
 same seed in, same rows out, same magnitudes verifiable.
@@ -7,7 +7,7 @@ Two things about the execution path are worth knowing before changing this:
 
 - **The identity matters.** DDL here needs table ownership, which the agent's
   service principal deliberately does not hold. Run it under a profile whose
-  user owns the schema's tables (`jakarta-workshop`), not under the app's
+  user owns the schema's tables (`brd-qa-idn`), not under the app's
   credentials.
 - **A failed statement is not an API error.** The statement API reports
   transport success while carrying the failure inside the payload, so every
@@ -40,9 +40,9 @@ from scripts.generate_sdlc_tickets import (
     insert_batches,
 )
 
-DEFAULT_PROFILE = "jakarta-workshop"
-DEFAULT_WAREHOUSE = "f623235257888af1"
-DEFAULT_TABLE = "workshop_ai_platform.example.sdlc_tickets"
+DEFAULT_PROFILE = "brd-qa-idn"
+DEFAULT_WAREHOUSE = "504121548fc7388f"
+DEFAULT_TABLE = "workshop_ai_platform.default.sdlc_tickets"
 VERIFY_SQL = pathlib.Path(__file__).parent / "sdlc_tickets_verify.sql"
 
 TABLE_COMMENT = (

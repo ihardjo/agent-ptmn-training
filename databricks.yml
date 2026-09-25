@@ -23,16 +23,16 @@ resources:
             value_from: "langfuse-secret"
           - name: LANGFUSE_HOST
             value: "https://agentmonitoring.pertamina.ai"
-          # Jakarta workspace — managed SQL MCP over workshop_ai_platform.example
+          # Jakarta workspace — managed SQL MCP over workshop_ai_platform.default
           - name: DATABRICKS_JAKARTA_HOST
-            value: "https://dbc-86b2f2e8-b955.cloud.databricks.com"
+            value: "https://dbc-77e33eef-a7e4.cloud.databricks.com"
           - name: DATABRICKS_JAKARTA_CLIENT_ID
             value_from: "databricks-jakarta-id"
           - name: DATABRICKS_JAKARTA_CLIENT_SECRET
             value_from: "databricks-jakarta-secret"
           # Volume-backed wiki — OKF bundle on a Unity Catalog Volume in Jakarta
           - name: DATABRICKS_WIKI_VOLUME
-            value: "/Volumes/workshop_ai_platform/example/agent_wiki"
+            value: "/Volumes/workshop_ai_platform/default/agent_wiki"
 
       # Resources which this app has access to
       resources:

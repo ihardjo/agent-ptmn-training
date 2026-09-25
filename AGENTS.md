@@ -98,7 +98,7 @@ When the user asks about evaluating their agent (quality, metrics, scorers, data
 npx skills add mlflow/skills
 ```
 
-After installation, the skills will be available as slash commands (e.g., `/agent-evaluation`). This repository has its own evaluation harness: `uv run agent-evaluate` scores the agent against the Langfuse `sdlc-agent-eval-v1` dataset. It drives the agent in process, so no local server needs to be running.
+After installation, the skills will be available as slash commands (e.g., `/agent-evaluation`). This repository has its own evaluation harness: `uv run agent-evaluate` scores the agent against the Langfuse `it-agent-eval` dataset. It drives the agent in process, so no local server needs to be running.
 
 ---
 
@@ -149,11 +149,14 @@ After installation, the skills will be available as slash commands (e.g., `/agen
 | `agent_server/agent.py` | Agent logic, model, instructions, MCP servers, filesystem tiers |
 | `agent_server/backends.py` | `VolumeBackend` — the `/wiki/` tier over the UC Files API |
 | `agent_server/okf.py` | OKF v0.2 parsing, conformance, and conformant writes |
+| `agent_server/uploads.py` | Chat attachments: what is accepted, and where it is filed |
+| `frontend_overlay/` | This repo's changes to the sparse-cloned chat UI template |
+| `scripts/overlay.py` | Applies them on every start; exits loudly when upstream moved |
 | `wiki_seed/` | Committed OKF bundle, uploaded to the Volume by `seed-wiki` |
 | `skills/` | The agent's skill menu; `REGISTRY.md` and `SECURITY-REVIEW.md` govern it |
 | `scripts/check_skills.py` | Checks the skills tier against the authoring standard |
 | `agent_server/start_server.py` | FastAPI server + MLflow setup |
-| `agent_evaluation/` | Agent evaluation: dataset, scorers, and runner for the Langfuse `sdlc-agent-eval-v1` dataset |
+| `agent_evaluation/` | Agent evaluation: dataset, scorers, and runner for the Langfuse `it-agent-eval` dataset |
 | `databricks.yml` | Bundle config & resource permissions |
 | `.github/workflows/deploy.yml` | GitHub Actions workflow to deploy this app (synced from `.scripts/source/.github/workflows/`) |
 | `scripts/quickstart.py` | One-command setup script |

@@ -1,15 +1,13 @@
-"""Selecting the SQL tools, and telling the model when none was selected.
+"""Selecting the SQL tools.
 
 `TODO 3` in `init_agent` is meant to be edited during a workshop, so the three
-settings it documents — `TOOLS_ALL`, a named list, `[]` — are all exercised
-here rather than trusted to read correctly.
+settings it documents — no names, a named list, `[]` — are all exercised here
+rather than trusted to read correctly.
 
-Two of these guard mistakes that leave no trace. Caching the *selection* rather
-than the discovered list would bake the first request's choice into the
-process, and `init_agent()` runs per request, so it would only show on the
-second, differing call. And an inverted `no_sql` condition would stop telling
-the model it has no way to query, which is the state `NO_SQL_NOTICE` exists to
-prevent — the agent answers from nothing and the figure looks measured.
+One of these guards a mistake that leaves no trace: caching the *selection*
+rather than the discovered list would bake the first request's choice into
+the process, and `init_agent()` runs per request, so it would only show on
+the second, differing call.
 """
 
 from __future__ import annotations
@@ -18,7 +16,7 @@ import asyncio
 
 import pytest
 
-import agent_server.agent as agent_mod
+import agent_server.mcp as mcp_mod
 
 
 class _Tool:
@@ -33,106 +31,94 @@ class _Tool:
 
 EXECUTE = "execute_sql"
 POLL = "poll_sql_result"
+READ_ONLY = "execute_sql_read_only"
+
+
+class _Client:
+    """Stands in for the MCP client; only `get_tools` is ever called."""
+
+    def __init__(self, tools: list) -> None:
+        self._tools = tools
+
+    async def get_tools(self) -> list:
+        return self._tools
+
+
+def _explodes():
+    raise AssertionError("the server was reached when the cache should have served")
 
 
 @pytest.fixture
 def discovered(monkeypatch):
     """A server that has already answered, so no network is involved."""
     tools = [_Tool(EXECUTE), _Tool(POLL)]
-    monkeypatch.setattr(agent_mod, "_mcp_tools", tools)
-    monkeypatch.setattr(agent_mod, "_mcp_unavailable", None)
+    monkeypatch.setattr(mcp_mod, "_mcp_tools", tools)
+    monkeypatch.setattr(mcp_mod, "_mcp_unavailable", None)
     return tools
 
 
-def _names(selection) -> list[str]:
-    return [t.name for t in asyncio.run(agent_mod.mcp_tools(selection))]
+def _names(*selection, **kwargs) -> list[str]:
+    return [t.name for t in asyncio.run(mcp_mod.mcp_tools(*selection, **kwargs))]
 
 
 # ── the three settings TODO 3 documents ──────────────────────────────────────
 
 
-def test_all_takes_everything_the_server_offers(discovered):
-    assert _names(agent_mod.TOOLS_ALL) == [EXECUTE, POLL]
+def test_no_names_takes_everything_the_server_offers(discovered):
+    assert _names() == [EXECUTE, POLL]
 
 
-def test_a_named_list_takes_only_those_in_the_order_asked_for(discovered):
-    assert _names([POLL, EXECUTE]) == [POLL, EXECUTE]
+def test_a_named_list_takes_only_those(discovered):
+    """A filter, so the server's order is what comes back, not the order
+    asked for. Nothing downstream depends on tool order."""
+    assert _names([POLL]) == [POLL]
+    assert _names([POLL, EXECUTE]) == [EXECUTE, POLL]
 
 
 def test_an_empty_list_takes_nothing(discovered):
     assert _names([]) == []
 
 
-# ── mistakes that would otherwise be silent ──────────────────────────────────
-
-
-def test_an_unknown_name_raises_and_says_what_is_available(discovered):
-    """`stage_skills` raises for the same reason: a typo that silently drops a
-    tool changes behaviour with nothing in the logs pointing at the cause."""
-    with pytest.raises(ValueError) as exc:
-        _names(["execute_sql_read_only"])
-    message = str(exc.value)
-    assert "execute_sql_read_only" in message
-    assert EXECUTE in message and POLL in message
+def test_an_unknown_name_is_simply_absent(discovered):
+    """No longer an error. A typo drops the tool silently, so the mounted
+    list is logged at INFO on every call as the way to notice."""
+    assert _names(["execute_sql_read_only"]) == []
 
 
 def test_a_narrow_selection_does_not_poison_the_cache(discovered):
-    """Selection applies on the way out. Cached, it would bake the first
+    """Filtering applies on the way out. Cached, it would bake the first
     request's choice into the process."""
     assert _names([EXECUTE]) == [EXECUTE]
-    assert _names(agent_mod.TOOLS_ALL) == [EXECUTE, POLL]
+    assert _names() == [EXECUTE, POLL]
 
 
-# ── what the model is told when it cannot query ──────────────────────────────
+# ── the cache modes, as `MCPAdapter.list_tools` defines them ─────────────────
 
 
-NOTICE_HEADING = "# This run has no SQL tool"
+def test_use_serves_the_cache_without_calling_the_server(discovered, monkeypatch):
+    """The default. `discovered` has already filled the cache, so a client
+    that would explode is never reached for."""
+    monkeypatch.setattr(mcp_mod, "init_mcp_client", _explodes)
+    assert _names() == [EXECUTE, POLL]
 
 
-def _prompt(monkeypatch, selected, unavailable=None) -> str:
-    """The system prompt `init_agent` hands to `create_deep_agent`.
-
-    Everything that would reach the network or a workspace is stubbed; the
-    point is the wiring, not the graph.
-    """
-    captured: dict = {}
-
-    def fake_create(**kw):
-        captured.update(kw)
-        return object()
-
-    async def selection(*_, **__):
-        return selected
-
-    monkeypatch.setattr(agent_mod, "create_deep_agent", fake_create)
-    monkeypatch.setattr(agent_mod, "ChatDatabricks", lambda **kw: object())
-    monkeypatch.setattr(agent_mod, "build_backend", lambda *a, **kw: object())
-    monkeypatch.setattr(agent_mod, "mcp_tools", selection)
-    monkeypatch.setattr(agent_mod, "_mcp_unavailable", unavailable)
-    asyncio.run(agent_mod.init_agent())
-    return captured["system_prompt"]
+def test_bypass_calls_the_server_and_leaves_the_cache_alone(monkeypatch):
+    monkeypatch.setattr(mcp_mod, "_mcp_tools", None)
+    monkeypatch.setattr(mcp_mod, "init_mcp_client", lambda: _Client([_Tool(EXECUTE)]))
+    assert _names(None, cache_mode="bypass") == [EXECUTE]
+    assert mcp_mod._mcp_tools is None, "bypass must not populate the cache"
 
 
-def test_no_notice_when_a_query_is_possible(monkeypatch):
-    assert NOTICE_HEADING not in _prompt(monkeypatch, [_Tool(EXECUTE), _Tool(POLL)])
+def test_refresh_replaces_a_stale_cache(discovered, monkeypatch):
+    """The server grew a tool. `use` cannot see it; `refresh` can."""
+    monkeypatch.setattr(
+        mcp_mod, "init_mcp_client", lambda: _Client([_Tool(EXECUTE), _Tool(POLL), _Tool(READ_ONLY)])
+    )
+    assert _names() == [EXECUTE, POLL]
+    assert _names(None, cache_mode="refresh") == [EXECUTE, POLL, READ_ONLY]
+    assert _names() == [EXECUTE, POLL, READ_ONLY], "refresh repopulates the cache"
 
 
-def test_the_notice_fires_when_nothing_was_selected(monkeypatch):
-    """`[]` is a documented setting of TODO 3, not only a failure."""
-    prompt = _prompt(monkeypatch, [])
-    assert NOTICE_HEADING in prompt
-    assert "was selected for this run" in prompt
-
-
-def test_the_notice_fires_when_only_the_poller_was_selected(monkeypatch):
-    """The test is `execute_sql`, not emptiness: a poller alone is non-empty
-    and still cannot answer anything."""
-    assert NOTICE_HEADING in _prompt(monkeypatch, [_Tool(POLL)])
-
-
-def test_the_notice_still_fires_when_the_server_is_unreachable(monkeypatch):
-    """The older of the two causes; reachability must keep working."""
-    reason = "the dbsql MCP server could not be reached (ConnectError)"
-    prompt = _prompt(monkeypatch, [], unavailable=reason)
-    assert NOTICE_HEADING in prompt
-    assert reason in prompt, "the model is told which of the two causes applies"
+def test_an_unknown_mode_raises(discovered):
+    with pytest.raises(ValueError, match="cache_mode"):
+        _names(None, cache_mode="sometimes")

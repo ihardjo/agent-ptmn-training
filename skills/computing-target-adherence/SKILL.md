@@ -22,9 +22,9 @@ saying which one it was.
 
 ### 1. Read the targets from the wiki
 
-Read `/wiki/raw/policies/resolution-targets.md`. It holds a target per
+Read `/wiki/notes/policies/resolution-targets.md`. It holds a target per
 `ticket_type` and `priority`. Read the counting rules from
-`/wiki/raw/policies/breach-counting.md`.
+`/wiki/notes/policies/breach-counting.md`.
 
 Do not reproduce target values from this skill or from memory — there are none
 here on purpose. A target that changes in the wiki must change in the answer,
@@ -33,7 +33,7 @@ and that only works if the answer was read from the wiki this time.
 ### 2. Use working time as the basis
 
 Working time — `cycle_time_hours` — is the basis, per
-`/wiki/raw/definitions/duration-basis.md`. Confirm it there rather than
+`/wiki/notes/definitions/duration-basis.md`. Confirm it there rather than
 assuming it; the charter could change it and this skill would not.
 
 **`due_date` is not the target, and this is the trap specific to adherence.**
@@ -87,8 +87,8 @@ Lead with the adherence figure, then the evidence:
 > | Excluded — not closed | «X» |
 > | Excluded — not started | «Y» |
 >
-> - Target from `/wiki/raw/policies/resolution-targets.md` («state whether verified and current»).
-> - Counting rules from `/wiki/raw/policies/breach-counting.md` (draft, unratified).
+> - Target from `/wiki/notes/policies/resolution-targets.md` («state whether verified and current»).
+> - Counting rules from `/wiki/notes/policies/breach-counting.md` (draft, unratified).
 > - Measured on working time (`cycle_time_hours`), which is the basis the charter defines. Elapsed time from `created_at` has no target.
 
 Compute every number. The placeholders above are shape, not data.
