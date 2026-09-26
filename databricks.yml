@@ -4,7 +4,7 @@ bundle:
 resources:
   apps:
     agent_langgraph:
-      name: "agent-ptmn-training"
+      name: "agent-workshop-ai-default"
       description: "LangGraph agent application"
       source_code_path: ./
       config:
@@ -38,17 +38,17 @@ resources:
       resources:
         - name: 'langfuse-secret'
           secret:
-            scope: agent-ptmn-training
+            scope: agent-workshop-ai-default
             key: langfuse-secret-key
             permission: 'READ'
         - name: 'databricks-jakarta-id'
           secret:
-            scope: agent-ptmn-training
+            scope: agent-workshop-ai-default
             key: databricks-jakarta-id
             permission: 'READ'
         - name: 'databricks-jakarta-secret'
           secret:
-            scope: agent-ptmn-training
+            scope: agent-workshop-ai-default
             key: databricks-jakarta-secret
             permission: 'READ'
 
@@ -57,7 +57,7 @@ targets:
     mode: development
     default: true
     workspace:
-      host: https://dbc-93c4f1e3-5706.cloud.databricks.com
+      host: https://dbc-2097a69c-b1b8.cloud.databricks.com
 
   prod:
     mode: production
