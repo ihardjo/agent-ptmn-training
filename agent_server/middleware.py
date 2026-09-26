@@ -16,16 +16,6 @@ from langchain.agents.middleware import (
 
 logger = logging.getLogger(__name__)
 
-# langchain's built-in email pattern ends `[A-Z|a-z]{2,}` — a character class
-# that literally contains a pipe, almost certainly meant as alternation. A pipe
-# straight after the TLD is therefore part of the match. That was harmless while
-# the SQL server returned JSON; `system.ai.dbsql` returns markdown tables, so
-# every address now swallows its own column separator and, mid-row, the next
-# cell's value with it. The same person then hashes two ways and the grouping
-# that `strategy="hash"` exists to preserve is lost.
-#
-# Identical to the upstream pattern but for that class. See
-# `test_a_pipe_separator_is_swallowed_upstream`.
 EMAIL_PATTERN = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
 
 

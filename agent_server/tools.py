@@ -42,14 +42,17 @@ def roll_dice(sides: int = 6) -> int:
 # The tools defined above. Drop one from this list to take it away from the
 # model; the function itself stays here, unused.
 SELECTED_CUSTOM_TOOLS = [
-    get_current_time,
-    days_until,
-    roll_dice,
+    # get_current_time,
+    # days_until,
+    # roll_dice,
 ]
 
 ## TODO 3b: Tool Selection (Databricks Managed MCP)
 # ["execute_sql", "execute_sql_read_only" "poll_sql_result"]
-SELECTED_MCP_TOOLS = ["execute_sql_read_only", "poll_sql_result"]
+SELECTED_MCP_TOOLS = [
+    "execute_sql_read_only", 
+    "poll_sql_result"
+]
 
 async def agent_tools() -> list[Any]:
     """Every tool the agent is built with, remote ones first.

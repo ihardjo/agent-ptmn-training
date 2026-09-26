@@ -14,11 +14,18 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = REPO_ROOT / "skills"
 SKILLS_MOUNT = "/skills/"
 
-## TODO 4: Skill Selection — edit `SELECTED_SKILLS` to add or remove skills.
+## TODO 4: Skill Selection — uncomment the skills to put in front of the model.
 SELECTED_SKILLS = (
-    "auditing-data-quality",
-    "checking-due-dates",
-    "computing-target-adherence",
+    # "auditing-data-quality",
+    # "checking-due-dates",
+    # "computing-target-adherence",
+    # "measuring-sprint-velocity",
+    # "splitting-planned-unplanned-work",
+    # "summarising-root-causes",
+    # "escalating-breaches",
+    # "explaining-ticket-history",
+    # "formatting-service-review",
+    # "ranking-squad-performance",
 )
 
 def skill_files() -> dict[str, Any]:
