@@ -56,7 +56,7 @@ def live_raw(live_client):
 @pytest.fixture(scope="module")
 def live_wiki(live_client):
     """The wiki itself — the OKF bundle the seed populates."""
-    return VolumeBackend(live_client, os.environ["DATABRICKS_WIKI_VOLUME"], "notes")
+    return VolumeBackend(live_client, os.environ["DATABRICKS_WIKI_VOLUME"], "wiki")
 
 
 @pytest.fixture
@@ -64,7 +64,7 @@ def live_notes(live_client):
     return VolumeBackend(
         live_client,
         os.environ["DATABRICKS_WIKI_VOLUME"],
-        "notes",
+        "wiki",
     )
 
 

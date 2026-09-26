@@ -12,11 +12,11 @@ from agent_server.backends import VolumeBackend
 # ── 3.1 path resolution and confinement ──────────────────────────────────────
 
 
-def test_same_relative_path_resolves_into_two_distinct_tiers(client, source, notes, volume_root):
+def test_same_relative_path_resolves_into_two_distinct_tiers(client, source, wiki, volume_root):
     """One Volume, two subdirectories, two tiers — the whole basis of the split."""
-    a, b = source, notes
+    a, b = source, wiki
     assert a._resolve("/notes.md") == f"{volume_root}/raw/notes.md"
-    assert b._resolve("/notes.md") == f"{volume_root}/notes/notes.md"
+    assert b._resolve("/notes.md") == f"{volume_root}/wiki/notes.md"
     assert a._resolve("/notes.md") != b._resolve("/notes.md")
 
 
@@ -34,13 +34,13 @@ def test_traversal_inside_the_subdirectory_is_allowed(client, source, volume_roo
     assert source._resolve("/policies/../index.md") == f"{volume_root}/raw/index.md"
 
 
-def test_escape_arrives_as_an_error_result_not_a_raise(client, source, notes):
+def test_escape_arrives_as_an_error_result_not_a_raise(client, source, wiki):
     """Every public method maps the refusal to a result the agent can read."""
     b = source
     assert "outside" in (b.read("../notes/x.md").error or "")
     assert "outside" in (b.write("../notes/x.md", "x").error or "")
     assert "outside" in (b.delete("../notes/x.md").error or "")
-    assert "outside" in (b.ls("../notes").error or "")
+    assert "outside" in (b.ls("../wiki").error or "")
 
 
 # ── 3.2 read window contract ─────────────────────────────────────────────────
@@ -81,35 +81,35 @@ def test_a_window_in_the_middle_numbers_its_own_gutter(client, source):
 # ── 3.3 writes ───────────────────────────────────────────────────────────────
 
 
-def test_written_file_reads_back(client, notes):
-    b = notes
+def test_written_file_reads_back(client, wiki):
+    b = wiki
     assert b.write("/fresh.md", "---\ntype: Observation\n---\n\nbody\n").error is None
     assert "body" in b.read("/fresh.md").file_data["content"]
 
 
-def test_write_lands_on_the_volume_under_the_right_subdirectory(client, notes, volume_root):
-    notes.write("/fresh.md", "x")
-    assert f"{volume_root}/notes/fresh.md" in client.files.contents
+def test_write_lands_on_the_volume_under_the_right_subdirectory(client, wiki, volume_root):
+    wiki.write("/fresh.md", "x")
+    assert f"{volume_root}/wiki/fresh.md" in client.files.contents
 
 
-def test_edit_replaces_and_counts(client, notes):
-    b = notes
+def test_edit_replaces_and_counts(client, wiki):
+    b = wiki
     r = b.edit("/existing.md", "prior note", "revised note")
     assert r.error is None and r.occurrences == 1
     assert "revised note" in b.read("/existing.md").file_data["content"]
 
 
-def test_edit_of_a_missing_string_is_an_error_and_changes_nothing(client, notes):
-    b = notes
+def test_edit_of_a_missing_string_is_an_error_and_changes_nothing(client, wiki):
+    b = wiki
     before = dict(client.files.contents)
     assert b.edit("/existing.md", "absent", "x").error is not None
     assert client.files.contents == before
 
 
-def test_delete_removes_the_file(client, notes, volume_root):
-    b = notes
+def test_delete_removes_the_file(client, wiki, volume_root):
+    b = wiki
     assert b.delete("/existing.md").error is None
-    assert f"{volume_root}/notes/existing.md" not in client.files.contents
+    assert f"{volume_root}/wiki/existing.md" not in client.files.contents
 
 
 # ── 3.4 search ───────────────────────────────────────────────────────────────
@@ -217,59 +217,59 @@ def test_a_corrupt_word_document_is_reported_not_raised(client, source, volume_r
     assert r.error is not None and "Word document" in r.error
 
 
-# ── 5.3 the notes tier writes conformant OKF ─────────────────────────────────
+# ── 5.3 the wiki tier writes conformant OKF ─────────────────────────────────
 
 
-def test_a_note_written_without_frontmatter_lands_conformant(notes, client, volume_root):
+def test_a_note_written_without_frontmatter_lands_conformant(wiki, client, volume_root):
     from agent_server.okf import conformance_errors, parse
 
-    assert notes.write("/finding.md", "Rank 1 holds 23.3% of closures.\n").error is None
-    landed = client.files.contents[f"{volume_root}/notes/finding.md"].decode()
+    assert wiki.write("/finding.md", "Rank 1 holds 23.3% of closures.\n").error is None
+    landed = client.files.contents[f"{volume_root}/wiki/finding.md"].decode()
     fm, body = parse(landed)
     assert fm["type"], "the write path must supply a type"
     assert fm["generated"]["by"], "the write path must record what produced it"
     assert "23.3%" in body
-    assert conformance_errors({"notes/finding.md": landed}) == []
+    assert conformance_errors({"wiki/finding.md": landed}) == []
 
 
-def test_the_actor_recorded_is_the_one_configured(notes, client, volume_root):
+def test_the_actor_recorded_is_the_one_configured(wiki, client, volume_root):
     from agent_server.okf import parse
 
-    notes.write("/finding.md", "a finding\n")
-    landed = client.files.contents[f"{volume_root}/notes/finding.md"].decode()
-    assert parse(landed)[0]["generated"]["by"] == notes._okf_actor
+    wiki.write("/finding.md", "a finding\n")
+    landed = client.files.contents[f"{volume_root}/wiki/finding.md"].decode()
+    assert parse(landed)[0]["generated"]["by"] == wiki._okf_actor
 
 
-def test_an_edit_keeps_the_document_conformant(notes, client, volume_root):
+def test_an_edit_keeps_the_document_conformant(wiki, client, volume_root):
     from agent_server.okf import conformance_errors
 
-    notes.write("/finding.md", "first version\n")
-    assert notes.edit("/finding.md", "first", "second").error is None
-    landed = client.files.contents[f"{volume_root}/notes/finding.md"].decode()
-    assert conformance_errors({"notes/finding.md": landed}) == []
+    wiki.write("/finding.md", "first version\n")
+    assert wiki.edit("/finding.md", "first", "second").error is None
+    landed = client.files.contents[f"{volume_root}/wiki/finding.md"].decode()
+    assert conformance_errors({"wiki/finding.md": landed}) == []
 
 
-def test_reserved_filenames_are_not_given_frontmatter(notes, client, volume_root):
+def test_reserved_filenames_are_not_given_frontmatter(wiki, client, volume_root):
     """§8/§9 — an index and a log carry none, so adding it would break the bundle."""
     from agent_server.okf import conformance_errors
 
-    notes.write("/index.md", "# Notes\n\n* [A finding](/notes/finding.md) - a finding\n")
-    notes.write("/log.md", "# Log\n\n## 2026-09-18\n* **Creation**: a note.\n")
+    wiki.write("/index.md", "# Notes\n\n* [A finding](/notes/finding.md) - a finding\n")
+    wiki.write("/log.md", "# Log\n\n## 2026-09-18\n* **Creation**: a note.\n")
     docs = {
-        "notes/index.md": client.files.contents[f"{volume_root}/notes/index.md"].decode(),
-        "notes/log.md": client.files.contents[f"{volume_root}/notes/log.md"].decode(),
+        "wiki/index.md": client.files.contents[f"{volume_root}/wiki/index.md"].decode(),
+        "wiki/log.md": client.files.contents[f"{volume_root}/wiki/log.md"].decode(),
     }
-    assert not docs["notes/log.md"].startswith("---")
+    assert not docs["wiki/log.md"].startswith("---")
     assert conformance_errors(docs) == []
 
 
-def test_non_markdown_writes_are_left_alone(notes, client, volume_root):
-    notes.write("/data.json", '{"a": 1}\n')
-    assert client.files.contents[f"{volume_root}/notes/data.json"].decode() == '{"a": 1}\n'
+def test_non_markdown_writes_are_left_alone(wiki, client, volume_root):
+    wiki.write("/data.json", '{"a": 1}\n')
+    assert client.files.contents[f"{volume_root}/wiki/data.json"].decode() == '{"a": 1}\n'
 
 
 def test_the_source_tier_does_not_rewrite_content(source):
-    """Only the notes tier is a producer; the source tier is a mirror."""
+    """Only the wiki tier is a producer; the source tier is a mirror."""
     assert source._okf_actor is None
 def test_a_truncated_scan_says_so(client, volume_root, monkeypatch):
     """Otherwise "I stopped looking" is indistinguishable from "nothing there"."""

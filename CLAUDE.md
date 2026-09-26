@@ -25,7 +25,7 @@ uv run start-server
 # Explore available Databricks MCP tools
 uv run discover-tools
 
-# Upload the committed wiki bundle to the Volume (idempotent; never touches notes/)
+# Upload the committed wiki bundle to the Volume (idempotent; digest-checked)
 uv run seed-wiki
 
 # Check the seed and the live Volume against OKF v0.2 conformance
@@ -125,7 +125,7 @@ may write there. Built in `agent_server/agent.py:build_backend()`:
 | `/` | the thread | the agent | yes (scratch, discarded) |
 | `/skills/` | a merge | people, via the repo | no — deny rule |
 | `/wiki/raw/` | a sync | people, via OpenWiki or the chat paperclip | no — deny rule |
-| `/wiki/notes/` | durable | the agent | yes |
+| `/wiki/` | durable | the agent | yes |
 
 Chat attachments land under `/wiki/raw/uploads/<session>/` — the landing tree is
 where people put things, and attaching a file is a person putting one there. The

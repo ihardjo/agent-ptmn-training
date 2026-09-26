@@ -9,7 +9,7 @@ by the time `read_file` looks at it.
 
 They land under `raw/uploads/<session>/` — the landing tree, not the notes
 bundle. `/wiki/raw/` is where people put things, and an attachment is a person
-putting something there; `/wiki/notes/` is the OKF bundle the agent authors, and
+putting something there; `/wiki/` is the OKF bundle the agent authors, and
 a `.csv` someone attached is not a concept document. The per-session directory
 is so the agent can list one conversation's attachments without reading every
 other conversation's.

@@ -12,7 +12,7 @@ import pytest
 from deepagents.middleware.filesystem import _check_fs_permission
 
 from agent_server.backends import (
-    WIKI_NOTES_MOUNT,
+    WIKI_MOUNT,
     WIKI_SOURCE_MOUNT,
     build_backend,
     filesystem_permissions,
@@ -42,7 +42,7 @@ def test_writes_to_the_synced_source_are_denied(rules, path):
 
 
 def test_writes_to_the_notes_tier_are_allowed(rules):
-    assert _check_fs_permission(rules, "write", f"{WIKI_NOTES_MOUNT}finding.md") == "allow"
+    assert _check_fs_permission(rules, "write", f"{WIKI_MOUNT}finding.md") == "allow"
 
 
 def test_reads_of_the_synced_source_are_allowed(rules):
@@ -96,7 +96,7 @@ def test_backend_still_builds_without_the_wiki(monkeypatch):
     monkeypatch.delenv("DATABRICKS_WIKI_VOLUME", raising=False)
     be = build_backend()
     assert WIKI_SOURCE_MOUNT not in be.routes
-    assert WIKI_NOTES_MOUNT not in be.routes
+    assert WIKI_MOUNT not in be.routes
 
 
 # ── 4.4 routing ──────────────────────────────────────────────────────────────
@@ -104,7 +104,7 @@ def test_backend_still_builds_without_the_wiki(monkeypatch):
 
 def test_both_wiki_prefixes_are_routed_when_configured(monkeypatch, client):
     monkeypatch.setenv("DATABRICKS_WIKI_VOLUME", "/Volumes/c/s/v")
-    assert sorted(wiki_routes(client)) == sorted([WIKI_SOURCE_MOUNT, WIKI_NOTES_MOUNT])
+    assert sorted(wiki_routes(client)) == sorted([WIKI_SOURCE_MOUNT, WIKI_MOUNT])
 
 
 def test_the_guard_is_on_notes_and_off_on_source(monkeypatch, client):
@@ -112,12 +112,31 @@ def test_the_guard_is_on_notes_and_off_on_source(monkeypatch, client):
     routes = wiki_routes(client)
 
 
-def test_bare_wiki_prefix_is_not_a_route(monkeypatch, client):
-    """`/wiki/` itself must fall through to scratch.
+def test_the_bare_wiki_prefix_is_now_the_bundle(monkeypatch, client):
+    """`/wiki/` is a route, which reverses what this file used to assert.
 
-    A file only becomes durable at a prefix that says which tier it is in, so a
-    loose `/wiki/notes.md` is scratch and dies with the thread rather than
-    quietly landing on the Volume.
+    The wiki used to live at `/wiki/notes/`, and `/wiki/` was left unmounted so
+    a loose `/wiki/x.md` fell through to scratch instead of quietly landing on
+    the Volume. Collapsing that level removes the protection: anything written
+    under `/wiki/` is durable now. The test is kept, inverted, so the change is
+    visible to whoever reads the history rather than silently absent.
     """
     monkeypatch.setenv("DATABRICKS_WIKI_VOLUME", "/Volumes/c/s/v")
-    assert "/wiki/" not in build_backend(wiki_client=client).routes
+    assert "/wiki/" in build_backend(wiki_client=client).routes
+
+
+def test_a_raw_path_still_reaches_the_landing_tree(monkeypatch, client):
+    """The property the whole layout rests on: longest-prefix routing.
+
+    `/wiki/` and `/wiki/raw/` now overlap, and only the longer match keeps the
+    read-only tier read-only. If `CompositeBackend` ever matched shortest-first,
+    `/wiki/raw/x.md` would resolve into the writable bundle and the deny rule
+    would be guarding a path nothing routes to — which looks exactly like
+    working.
+    """
+    monkeypatch.setenv("DATABRICKS_WIKI_VOLUME", "/Volumes/c/s/v")
+    be = build_backend(wiki_client=client)
+    routes = be.routes
+    match = max((p for p in routes if "/wiki/raw/x.md".startswith(p)), key=len)
+    assert match == WIKI_SOURCE_MOUNT, f"/wiki/raw/x.md routed to {match!r}"
+    assert max((p for p in routes if "/wiki/x.md".startswith(p)), key=len) == WIKI_MOUNT

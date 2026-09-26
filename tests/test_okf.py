@@ -21,7 +21,7 @@ from agent_server.okf import (
     parse,
 )
 
-SEED = pathlib.Path(__file__).resolve().parent.parent / "wiki_seed" / "notes"
+SEED = pathlib.Path(__file__).resolve().parent.parent / "wiki_seed" / "wiki"
 ACTOR = "agent-ptmn-training/test-model"
 FIXED = datetime(2026, 9, 18, 7, 30, 0, tzinfo=timezone.utc)
 
@@ -148,7 +148,7 @@ def test_a_bare_note_is_given_type_and_generated():
 
 def test_the_resulting_document_is_conformant():
     out = ensure_conformant("a finding\n", actor=ACTOR, now=FIXED)
-    assert conformance_errors({"notes/n.md": out}) == []
+    assert conformance_errors({"wiki/n.md": out}) == []
 
 
 def test_an_agent_supplied_type_is_kept():
