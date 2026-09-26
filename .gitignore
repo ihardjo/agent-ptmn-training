@@ -202,27 +202,6 @@ sketch
 **/.vite/
 **/.databricks
 
-# Ignore .claude directory but track template-provided skills
-# User-created skills will be ignored by default (no conflicts)
-.claude/*
-!.claude/skills/
-.claude/skills/*
-!.claude/skills/quickstart/
-!.claude/skills/discover-tools/
-!.claude/skills/create-tools/
-!.claude/skills/deploy/
-!.claude/skills/managed-memory/
-!.claude/skills/add-tools/
-!.claude/skills/run-locally/
-!.claude/skills/modify-agent/
-!.claude/skills/lakebase-setup/
-!.claude/skills/agent-memory/
-!.claude/skills/migrate-from-model-serving/
-!.claude/skills/long-running-server/
-!.claude/skills/load-testing/
-!.claude/skills/supervisor-api/
-!.claude/skills/supervisor-api-background-mode/
-
 **/.env
 **/.env.local
 load-test-runs/
@@ -237,3 +216,20 @@ frontend.log
 # Generated data exports. `scripts/generate_sdlc_tickets.py` reproduces these
 # byte-for-byte from a pinned seed, so committing them is redundant weight.
 data/
+
+# Untracked deliberately, and removed from the remote. These are local or
+# out-of-band concerns rather than things a clone needs to run the agent:
+#
+#   .claude/           agent tooling for this repo, not the app
+#   .github/           CI workflow
+#   openspec/          change proposals and specs
+#   wiki_seed/         the committed OKF bundle uploaded by `uv run seed-wiki`
+#   agent_evaluation/  the Langfuse eval harness (`uv run agent-evaluate`)
+#
+# Note `databricks bundle deploy` honours this file, so none of these are
+# uploaded to the app either. Nothing here is needed at serving time.
+.claude/
+.github/
+openspec/
+wiki_seed/
+agent_evaluation/
