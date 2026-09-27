@@ -31,9 +31,6 @@ def jakarta_workspace_client() -> Optional[WorkspaceClient]:
     if profile := env("DATABRICKS_JAKARTA_PROFILE"):
         return WorkspaceClient(profile=profile)
 
-    # Stripped on the way in: these three arrive from a secret scope, and a
-    # trailing newline on the secret is rejected as a wrong credential rather
-    # than as a malformed one. See `agent_server/env.py`.
     host = env("DATABRICKS_JAKARTA_HOST")
     client_id = env("DATABRICKS_JAKARTA_CLIENT_ID")
     client_secret = env("DATABRICKS_JAKARTA_CLIENT_SECRET")

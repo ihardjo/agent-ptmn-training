@@ -31,9 +31,6 @@ OKF_ACTOR = f"agent-ptmn-training/{MODEL_ENDPOINT}"
 
 async def init_agent(flag_pii: bool = True, flag_tool_retries: bool = True):
     return create_deep_agent(
-        # Not `ChatDatabricks` directly: 0.20.0 reports cumulative token usage
-        # on every streamed chunk, which any consumer that sums them inflates
-        # by roughly the chunk count. See `agent_server/model.py`.
         model=build_model(MODEL_ENDPOINT),
         system_prompt=SYSTEM_PROMPT,
         tools=await agent_tools(),

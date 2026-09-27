@@ -17,17 +17,17 @@ SKILLS_MOUNT = "/skills/"
 
 logger = logging.getLogger(__name__)
 
-    ## Skill Selection — copy the skills to put inside SELECTED_SKILLS.
-    # "auditing-data-quality",
-    # "checking-due-dates",
-    # "computing-target-adherence",
-    # "measuring-sprint-velocity",
-    # "splitting-planned-unplanned-work",
-    # "summarising-root-causes",
-    # "escalating-breaches",
-    # "report-from-template",
-    # "formatting-service-review",
-    # "ranking-squad-performance",
+## Skill Selection — copy the skills to put inside SELECTED_SKILLS.
+# "auditing-data-quality",
+# "checking-due-dates",
+# "computing-target-adherence",
+# "measuring-sprint-velocity",
+# "splitting-planned-unplanned-work",
+# "summarising-root-causes",
+# "escalating-breaches",
+# "report-from-template",
+# "formatting-service-review",
+# "ranking-squad-performance",
 
 SELECTED_SKILLS = (
     ## TODO 4: Skill Selection — copy the skills to put inside SELECTED_SKILLS.
