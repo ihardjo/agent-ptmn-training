@@ -10,9 +10,9 @@ env:
     value: "300"
   # Langfuse observability (optional — agent starts without these)
   - name: LANGFUSE_PUBLIC_KEY
-    value: "pk-lf-091592b0-696e-4037-bd8b-8ebba8ed862e"
+    valueFrom: "langfuse-public-key"
   - name: LANGFUSE_SECRET_KEY
-    valueFrom: "langfuse-secret"
+    valueFrom: "langfuse-secret-key"
   - name: LANGFUSE_HOST
     value: "https://agentmonitoring.pertamina.ai"
   - name: LANGFUSE_TRACE_NAME
@@ -26,4 +26,4 @@ env:
     valueFrom: "databricks-jakarta-secret"
   # Volume-backed wiki — OKF bundle on a Unity Catalog Volume in Jakarta
   - name: DATABRICKS_WIKI_VOLUME
-    value: "/Volumes/workshop_ai_platform/default/agent_wiki"
+    value: "/Volumes/workshop_ai_platform/example/agent_wiki"
