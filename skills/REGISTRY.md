@@ -29,6 +29,6 @@ system prompt's safety rules are prohibited — see `SECURITY-REVIEW.md`.
 | Skill | Purpose | Owner | Version | Dependencies | Evaluation status |
 |---|---|---|---|---|---|
 | `checking-due-dates` | Competes with `computing-target-adherence` on SLA and overdue wording; redirects there | ihardjo | 1 | column `due_date`; `computing-target-adherence` | not yet evaluated — task 5.5 |
-| `explaining-ticket-history` | Promises a per-ticket narrative the table has no field for; declines | ihardjo | 1 | column `Custom Field (Root Cause)` | not yet evaluated — task 5.4 |
+| `report-from-template` | Promises a filled-in approved document the write path cannot produce; returns the content instead | ihardjo | 1 | the `.docx` read path in `agent_server/documents.py`; the analysis skills it defers figures to | not yet evaluated — task 5.4 |
 | `ranking-squad-performance` | Promises a team ranking with no team field; declines and forbids proxies | ihardjo | 1 | columns `component`, `project` | not yet evaluated — task 5.4 |
 | `formatting-service-review` | Restates nothing; exists to show what a prompt-duplicating skill costs | ihardjo | 1 | the standing instructions | not yet evaluated — task 5.4 |
