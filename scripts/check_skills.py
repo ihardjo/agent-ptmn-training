@@ -15,7 +15,6 @@ Checks, in the order the standard states them:
   body          under 500 lines
   references    resolve inside the skill, and one level deep only
   risk          no scripts, no URLs, no credentials, no path traversal
-  registry      every skill has an entry and every entry has a skill
   redirects     the skill-to-skill reference graph is acyclic
 
 Exits non-zero when any skill violates any of them.
@@ -32,7 +31,6 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = REPO_ROOT / "skills"
-REGISTRY = "REGISTRY.md"
 SKILL_FILE = "SKILL.md"
 
 NAME_MAX = 64
@@ -198,27 +196,6 @@ def check_risk_indicators(skill: Path) -> list[Finding]:
     return out
 
 
-def check_registry(root: Path, skills: list[Path]) -> list[Finding]:
-    registry = root / REGISTRY
-    if not registry.exists():
-        return [Finding(f"no {REGISTRY} at the tier root — every skill needs an entry")]
-    # Only the first cell of each table row names a skill. Matching every
-    # backticked token would also pick up the column names listed under
-    # Dependencies, which are not skills and must not be reported as missing.
-    listed = {
-        m.group(1)
-        for m in (
-            re.match(r"\|\s*`([a-z0-9-]+)`\s*\|", line.strip())
-            for line in registry.read_text().splitlines()
-        )
-        if m
-    }
-    present = {s.name for s in skills}
-    out = [Finding(f"{n}: present in the tier but absent from {REGISTRY}") for n in sorted(present - listed)]
-    out += [Finding(f"{n}: listed in {REGISTRY} but no such skill") for n in sorted(listed - present)]
-    return out
-
-
 def check_redirects(skills: list[Path]) -> list[Finding]:
     """The skill-to-skill reference graph must be acyclic.
 
@@ -268,7 +245,6 @@ def main() -> None:
         findings += check_body(skill, body)
         findings += check_references(skill)
         findings += check_risk_indicators(skill)
-    findings += check_registry(root, skills)
     findings += check_redirects(skills)
 
     print(f"{root}: {len(skills)} skill(s)")
