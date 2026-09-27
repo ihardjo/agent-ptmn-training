@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import io
 import logging
-import os
 import posixpath
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -60,6 +59,7 @@ from deepagents.backends.utils import (
 from deepagents.middleware.filesystem import FilesystemPermission
 
 from agent_server.documents import UnreadableDocumentError, decode
+from agent_server.env import env
 from agent_server.okf import ensure_conformant, is_reserved
 from agent_server.skills import SKILLS_MOUNT
 from agent_server.clients import jakarta_workspace_client
@@ -418,7 +418,7 @@ def wiki_routes(client: Optional[Any] = None, okf_actor: Optional[str] = None) -
     module has no opinion on what the agent is, so it takes the value rather
     than computing it.
     """
-    volume = os.environ.get("DATABRICKS_WIKI_VOLUME")
+    volume = env("DATABRICKS_WIKI_VOLUME")
     if not volume:
         logger.info(
             "DATABRICKS_WIKI_VOLUME not set — continuing without the /wiki/ tier."
@@ -479,7 +479,7 @@ def uploads_backend(client: Optional[Any] = None) -> Optional[VolumeBackend]:
     would only add a state to get wrong when the environment changes under a
     reload.
     """
-    volume = os.environ.get("DATABRICKS_WIKI_VOLUME")
+    volume = env("DATABRICKS_WIKI_VOLUME")
     if not volume:
         return None
     if client is None:
