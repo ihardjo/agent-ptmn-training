@@ -109,7 +109,7 @@ def seeded() -> dict[str, bytes]:
             b"---\ntype: Service Level Policy\n---\n\n"
             b"# Targets\n\n| Priority | Target |\n|---|---|\n| P2 | 80 |\n"
         ),
-        f"{VOLUME}/notes/existing.md": b"---\ntype: Observation\n---\n\nprior note\n",
+        f"{VOLUME}/wiki/existing.md": b"---\ntype: Observation\n---\n\nprior note\n",
     }
 
 
@@ -138,8 +138,8 @@ def source(client, volume_root):
 
 
 @pytest.fixture
-def notes(client, volume_root):
-    """The agent-writable notes tier: conformant writes on.
+def wiki(client, volume_root):
+    """The agent-writable wiki tier: conformant writes on.
 
     Configured the way `agent_server.backends.wiki_routes` configures it, so a test
     cannot pass against a tier the agent never actually gets.
@@ -149,6 +149,6 @@ def notes(client, volume_root):
     return VolumeBackend(
         client,
         volume_root,
-        "notes",
+        "wiki",
         okf_actor="agent-ptmn-training/test-model",
     )

@@ -24,12 +24,10 @@ PROMPTS_DIR = Path(__file__).parent / "prompts"
 ## TODO 1: LLM Selection
 MODEL_ENDPOINT = "databricks-glm-5-3-flash"
 
-# The OKF §7 actor this agent stamps onto notes it writes to the wiki tier —
-# `<producer>/<version>`, with the model endpoint standing in for version.
-OKF_ACTOR = f"agent-ptmn-training/{MODEL_ENDPOINT}"
-
 ## TODO 2: System Prompt — edit `prompts/system_prompt.md`.
 SYSTEM_PROMPT = (PROMPTS_DIR / "system_prompt.md").read_text()
+
+OKF_ACTOR = f"agent-ptmn-training/{MODEL_ENDPOINT}"
 
 async def init_agent(flag_pii: bool = True, flag_tool_retries: bool = True):
     return create_deep_agent(

@@ -9,9 +9,9 @@ repository and run the evaluation. It is also the worked example of the format
 The bundle mirrors the Volume's two prefixes and is uploaded as it stands:
 
     raw/    the landing tree — files as people drop them, any format
-    notes/  the wiki itself — OKF markdown and its indexes
+    wiki/   the wiki itself — OKF markdown and its indexes
 
-`notes/` is also where the agent writes, so a re-seed can overwrite an agent
+`wiki/` is also where the agent writes, so a re-seed can overwrite an agent
 note that happens to share a seeded path. Seeded paths are the ones committed
 here, and the digest check leaves anything unchanged alone.
 

@@ -390,9 +390,9 @@ class VolumeBackend(BackendProtocol):
 # The two halves of the wiki tier. Both are subdirectories of one Unity Catalog
 # Volume; the prefix, not the storage, is what states provenance.
 WIKI_SOURCE_MOUNT = "/wiki/raw/"
-WIKI_NOTES_MOUNT = "/wiki/notes/"
+WIKI_MOUNT = "/wiki/"
 WIKI_SOURCE_SUBDIR = "raw"
-WIKI_NOTES_SUBDIR = "notes"
+WIKI_SUBDIR = "wiki"
 
 
 def wiki_routes(client: Optional[Any] = None, okf_actor: Optional[str] = None) -> dict[str, Any]:
@@ -446,10 +446,10 @@ def wiki_routes(client: Optional[Any] = None, okf_actor: Optional[str] = None) -
         # removed with `agent_server/privacy.py`. Durable writes are covered
         # only by the system prompt and, for the main agent, by the fact that
         # `PIIMiddleware` pseudonymises identities before the model sees them.
-        WIKI_NOTES_MOUNT: VolumeBackend(
+        WIKI_MOUNT: VolumeBackend(
             client,
             volume,
-            WIKI_NOTES_SUBDIR,
+            WIKI_SUBDIR,
             # The write path supplies OKF frontmatter itself. Asking the prompt
             # for it would make conformance a matter of good behaviour; this
             # makes it a property of the tier.
@@ -502,18 +502,28 @@ def build_backend(
         /                  turn-scoped scratch, discarded with the thread
         /skills/           read-only, seeded from the repository each turn
         /wiki/raw/         read-only landing tree, any format, written by people
-        /wiki/notes/       the wiki: an OKF bundle, durable, shared across users
+        /wiki/             the wiki: an OKF bundle, durable, shared across users
 
     The default is state rather than local disk on purpose. An agent writing
     scratch files onto a container's ephemeral filesystem has produced something
     that looks durable and is not; keeping the default in state makes the
     lifetime honest and the prefix makes it visible.
 
-    Note that neither `/skills/` nor `/wiki/` itself is a route: `skill_files()`
-    is what puts content under `/skills/`, seeded into state on invoke (see
-    `routes.py`) rather than mounted; and a bare `/wiki/…` path falls through
-    to scratch, so a file only becomes durable at a prefix that says which of
-    the two wiki tiers it belongs to.
+    `/skills/` is still not a route: `skill_files()` is what puts content there,
+    seeded into state on invoke (see `routes.py`) rather than mounted.
+
+    **`/wiki/` is now a route, and that reverses an earlier decision.** It used
+    to be deliberately unmounted so that a bare `/wiki/x.md` fell through to
+    scratch rather than quietly becoming durable — the wiki lived one level
+    down, at `/wiki/notes/`. Collapsing that level buys a shorter path the model
+    gets right more often, and costs exactly the protection that was there:
+    anything written to `/wiki/<name>` is durable and shared, with no second
+    segment to make the intent explicit.
+
+    Routing is longest-prefix, so `/wiki/raw/…` still reaches the landing tree
+    rather than the bundle. That ordering is what keeps the read-only tier
+    read-only, and it is `CompositeBackend`'s behaviour rather than ours — see
+    `test_a_raw_path_still_reaches_the_landing_tree`.
     """
     routes: dict[str, Any] = wiki_routes(wiki_client, okf_actor=okf_actor)
     logger.info("Filesystem tiers: / (scratch), %s", ", ".join(sorted(routes)) or "none")
@@ -535,9 +545,14 @@ def filesystem_permissions() -> list[FilesystemPermission]:
     both subdirectories, so a gap in this list is a correctness bug and not a
     missing hardening measure.
 
-    `/wiki/notes/` is deliberately absent. It is the wiki, holding authored
+    `/wiki/` itself is deliberately absent. It is the wiki, holding authored
     policy and the agent's own notes side by side, and the agent writes there;
     `generated.by` is what separates the two, not a permission.
+
+    Note the two rules are not symmetric in how they are matched: `/wiki/raw/**`
+    has to deny a *longer* prefix than the `/wiki/` route that is allowed. A
+    glob that stopped at `/wiki/**` would deny the whole bundle and the agent
+    could never write a note.
     """
     return [
         FilesystemPermission(
