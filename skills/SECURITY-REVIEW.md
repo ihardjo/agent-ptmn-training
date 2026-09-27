@@ -76,14 +76,19 @@ finding, but because it drew on only one evaluation item and its lesson was
 carried better elsewhere. Recorded here so its absence reads as a decision
 rather than an omission.
 
-## Model coverage deviation
+## Model coverage
 
-The guidance asks for testing across Haiku, Sonnet and Opus. This agent does
-not run on a Claude model: the agent is `databricks-glm-5-3-flash` and the
-evaluation judge is `gpt-oss-120b`. The requirement is satisfied in intent —
-test on the models actually deployed — and the selection set was run against
-the deployed agent model. Recorded so the deviation is deliberate rather than
-an omission.
+The guidance asks for testing across Haiku, Sonnet and Opus. This agent has no
+single model: participants choose one of five at `agent_server/agent.py`'s
+`MODEL_ENDPOINT`, including `databricks-claude-opus-5`. The earlier claim that
+this agent does not run on a Claude model no longer holds. Haiku and Sonnet
+are still not on the menu and were not tested. The evaluation judge remains
+`gpt-oss-120b`.
+
+The five-model comparison that first put Opus on the menu was run against the
+eval set later retired in favour of `it-agent-eval`; a baseline against the
+current dataset has not been run, so this section records that Opus is
+reachable and no more.
 
 ## Separation of duties
 

@@ -12,6 +12,7 @@ from langchain.agents.middleware import (
     PIIMiddleware,
     TodoListMiddleware,
     ToolRetryMiddleware,
+    wrap_tool_call,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,8 +44,28 @@ def _is_rate_limited(exc: BaseException, depth: int = 0) -> bool:
     return False
 
 
+@wrap_tool_call
+async def flatten_tool_result_blocks(request, handler):
+    """Return a tool result as text rather than as content blocks.
+
+    `langchain-mcp-adapters` returns `[{"type": "text", "text": ..., "id": "lc_..."}]`.
+    Most endpoints ignore the extra `id`; the Anthropic-backed ones reject the
+    whole turn over it. Joining here is what keeps `MODEL_ENDPOINT` a one-line
+    switch, and costs nothing on the endpoints that tolerated the blocks.
+    """
+    response = await handler(request)
+    content = getattr(response, "content", None)
+    if isinstance(content, list):
+        response.content = "\n".join(
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+    return response
+
+
 def build_middlewares(flag_pii: bool, flag_tool_retries: bool) -> list[Any]:
-    middlewares: list[Any] = [TodoListMiddleware()]
+    middlewares: list[Any] = [TodoListMiddleware(), flatten_tool_result_blocks]
     if flag_pii:
         middlewares.append(
             PIIMiddleware(
