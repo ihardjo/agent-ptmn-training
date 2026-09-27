@@ -9,11 +9,11 @@ does not mean reading all of them.
 import logging
 from pathlib import Path
 
-from databricks_langchain import ChatDatabricks
 from deepagents import create_deep_agent
 
 from agent_server.backends import build_backend, filesystem_permissions
 from agent_server.middleware import build_middlewares
+from agent_server.model import build_model
 from agent_server.skills import SKILLS_MOUNT
 from agent_server.tools import agent_tools
 
@@ -31,7 +31,7 @@ OKF_ACTOR = f"agent-ptmn-training/{MODEL_ENDPOINT}"
 
 async def init_agent(flag_pii: bool = True, flag_tool_retries: bool = True):
     return create_deep_agent(
-        model=ChatDatabricks(endpoint=MODEL_ENDPOINT),
+        model=build_model(MODEL_ENDPOINT),
         system_prompt=SYSTEM_PROMPT,
         tools=await agent_tools(),
         skills=[SKILLS_MOUNT],

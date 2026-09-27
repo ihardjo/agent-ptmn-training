@@ -1,5 +1,4 @@
 import logging
-import os
 from typing import Any, AsyncGenerator
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
@@ -7,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from langfuse.langchain import CallbackHandler
 
 from agent_server.agent import init_agent
+from agent_server.env import env
 from agent_server.skills import skill_files
 from agent_server.models import (
     AssistantMessage,
@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+DEFAULT_TRACE_NAME = "LangGraph"
+
 
 def trace_config(session_id: str | None = None) -> dict:
     """Langfuse callbacks for one run, or an empty config when no host is set.
@@ -38,12 +40,18 @@ def trace_config(session_id: str | None = None) -> dict:
     inside the SDK — so keys left in place with the host dropped would ship
     prompts and tool output to a third-party SaaS instead of failing. Missing keys
     need no branch; the SDK disables itself. LANGFUSE_BASE_URL wins, as in the SDK.
+
+    `run_name` is LangChain's, not Langfuse's: the handler takes the root run's
+    name as the trace name, so there is no Langfuse-side setting for this and
+    naming the run is how it is done. Verified against a live trace rather than
+    assumed — see `test_the_trace_name_is_passed_as_the_run_name`.
     """
-    host = os.environ.get("LANGFUSE_BASE_URL") or os.environ.get("LANGFUSE_HOST")
+    host = env("LANGFUSE_BASE_URL") or env("LANGFUSE_HOST")
     if not host:
         logger.info("No LANGFUSE_HOST — this run will not be traced.")
         return {}
-    config: dict = {"callbacks": [CallbackHandler()]}
+    name = env("LANGFUSE_TRACE_NAME") or DEFAULT_TRACE_NAME
+    config: dict = {"callbacks": [CallbackHandler()], "run_name": name}
     if session_id:
         config["metadata"] = {"langfuse_session_id": session_id}
     return config

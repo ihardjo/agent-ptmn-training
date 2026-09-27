@@ -23,6 +23,8 @@ resources:
             value_from: "langfuse-secret"
           - name: LANGFUSE_HOST
             value: "https://agentmonitoring.pertamina.ai"
+          - name: LANGFUSE_TRACE_NAME
+            value: "agent-workshop-ai-default"
           # Jakarta workspace — managed SQL MCP over workshop_ai_platform.default
           - name: DATABRICKS_JAKARTA_HOST
             value: "https://dbc-77e33eef-a7e4.cloud.databricks.com"

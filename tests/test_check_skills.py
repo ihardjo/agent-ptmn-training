@@ -24,7 +24,6 @@ GOOD_DESCRIPTION = "Does a narrow thing. Use when asked to do that narrow thing.
 def write_tier(
     root: Path,
     skills: list[tuple[str, str, str, dict[str, str] | None]],
-    registry: list[str] | None = None,
 ) -> Path:
     for name, front, body, extra in skills:
         d = root / name
@@ -32,10 +31,6 @@ def write_tier(
         (d / "SKILL.md").write_text(f"---\n{front}\n---\n\n{body}\n")
         for filename, content in (extra or {}).items():
             (d / filename).write_text(content)
-    names = registry if registry is not None else [s[0] for s in skills]
-    (root / "REGISTRY.md").write_text(
-        "| Skill |\n|---|\n" + "".join(f"| `{n}` |\n" for n in names)
-    )
     return root
 
 
@@ -226,27 +221,6 @@ def test_check_fires(tmp_path, label, skills, expected):
     code, out = run_checker(write_tier(tmp_path / label, skills))
     assert code == 1, f"{label} should fail conformance:\n{out}"
     assert expected in out, f"{label} failed for the wrong reason:\n{out}"
-
-
-def test_registry_missing_entry(tmp_path):
-    code, out = run_checker(write_tier(tmp_path / "t", [good_skill()], registry=[]))
-    assert code == 1
-    assert "present in the tier but absent from REGISTRY.md" in out
-
-
-def test_registry_entry_without_skill(tmp_path):
-    root = write_tier(tmp_path / "t", [good_skill()], registry=["good-skill", "ghost-skill"])
-    code, out = run_checker(root)
-    assert code == 1
-    assert "listed in REGISTRY.md but no such skill" in out
-
-
-def test_registry_absent_entirely(tmp_path):
-    root = write_tier(tmp_path / "t", [good_skill()])
-    (root / "REGISTRY.md").unlink()
-    code, out = run_checker(root)
-    assert code == 1
-    assert "no REGISTRY.md at the tier root" in out
 
 
 def test_conforming_tier_passes(tmp_path):

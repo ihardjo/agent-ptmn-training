@@ -68,7 +68,7 @@ def _middleware(monkeypatch, **kwargs) -> list:
         return []
 
     monkeypatch.setattr(agent_mod, "create_deep_agent", fake_create)
-    monkeypatch.setattr(agent_mod, "ChatDatabricks", lambda **kw: object())
+    monkeypatch.setattr(agent_mod, "build_model", lambda *a, **kw: object())
     monkeypatch.setattr(agent_mod, "build_backend", lambda *a, **kw: object())
     monkeypatch.setattr(agent_mod, "agent_tools", no_tools)
     asyncio.run(agent_mod.init_agent(**kwargs))

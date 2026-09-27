@@ -6,11 +6,12 @@ client, and `tools` needs `mcp` to assemble the tool list.
 """
 
 import logging
-import os
 from typing import Optional
 
 from databricks.sdk import WorkspaceClient
 from databricks_langchain import DatabricksMCPServer, DatabricksMultiServerMCPClient
+
+from agent_server.env import env
 
 logger = logging.getLogger(__name__)
 
@@ -27,12 +28,12 @@ def jakarta_workspace_client() -> Optional[WorkspaceClient]:
     no profile to fall back on, so it is unset there and the credentials below
     are what count.
     """
-    if profile := os.environ.get("DATABRICKS_JAKARTA_PROFILE"):
+    if profile := env("DATABRICKS_JAKARTA_PROFILE"):
         return WorkspaceClient(profile=profile)
 
-    host = os.environ.get("DATABRICKS_JAKARTA_HOST")
-    client_id = os.environ.get("DATABRICKS_JAKARTA_CLIENT_ID")
-    client_secret = os.environ.get("DATABRICKS_JAKARTA_CLIENT_SECRET")
+    host = env("DATABRICKS_JAKARTA_HOST")
+    client_id = env("DATABRICKS_JAKARTA_CLIENT_ID")
+    client_secret = env("DATABRICKS_JAKARTA_CLIENT_SECRET")
     if not (host and client_id and client_secret):
         return None
     return WorkspaceClient(
@@ -60,7 +61,7 @@ def init_mcp_client() -> Optional[DatabricksMultiServerMCPClient]:
         [
             DatabricksMCPServer(
                 name="dbsql",
-                url=f"{os.environ['DATABRICKS_JAKARTA_HOST']}/api/2.0/mcp/sql",
+                url=f"{env('DATABRICKS_JAKARTA_HOST')}/api/2.0/mcp/sql",
                 workspace_client=jakarta,
                 handle_tool_error=True,
             ),
