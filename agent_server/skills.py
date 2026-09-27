@@ -14,8 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = REPO_ROOT / "skills"
 SKILLS_MOUNT = "/skills/"
 
-## TODO 4: Skill Selection — uncomment the skills to put in front of the model.
-SELECTED_SKILLS = (
+    ## Skill Selection — copy the skills to put inside SELECTED_SKILLS.
     # "auditing-data-quality",
     # "checking-due-dates",
     # "computing-target-adherence",
@@ -26,6 +25,10 @@ SELECTED_SKILLS = (
     # "explaining-ticket-history",
     # "formatting-service-review",
     # "ranking-squad-performance",
+
+SELECTED_SKILLS = (
+    ## TODO 4: Skill Selection — copy the skills to put inside SELECTED_SKILLS.
+    
 )
 
 def skill_files() -> dict[str, Any]:

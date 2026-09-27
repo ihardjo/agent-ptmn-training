@@ -1,6 +1,5 @@
 import argparse
 import logging
-import os
 from pathlib import Path
 
 import httpx
@@ -13,6 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 # Load env vars from .env before importing the agent for proper auth
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
 
+from agent_server.env import env  # noqa: E402
 from agent_server.routes import router  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -22,15 +22,15 @@ logger = logging.getLogger(__name__)
 # MCP tool discovery line that has been there since the beginning. Requirements
 # that say something is "recorded in the application log" need this to be set.
 logging.basicConfig(
-    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    level=env("LOG_LEVEL", "INFO").upper(),
     format="%(levelname)s %(name)s: %(message)s",
 )
 
 # ── Chat proxy middleware ──────────────────────────────────────────────────────
 # Proxies frontend paths to the Next.js app on CHAT_APP_PORT.
 
-_CHAT_PORT = os.environ.get("CHAT_APP_PORT", "3000")
-_PROXY_TIMEOUT = float(os.environ.get("CHAT_PROXY_TIMEOUT_SECONDS", "300"))
+_CHAT_PORT = env("CHAT_APP_PORT", "3000")
+_PROXY_TIMEOUT = float(env("CHAT_PROXY_TIMEOUT_SECONDS", "300"))
 _PROXY_EXACT = {"/", "/favicon.ico", "/ping"}
 _PROXY_PREFIXES = ("/assets/", "/api/", "/chat/")
 
@@ -88,7 +88,7 @@ def main():
     parser.add_argument(
         "--port",
         type=int,
-        default=int(os.environ.get("PORT", 8000)),
+        default=int(env("PORT", "8000")),
         help="port to listen on (default: $PORT or 8000)",
     )
     args = parser.parse_args()
