@@ -49,7 +49,7 @@ def build_middlewares(flag_pii: bool, flag_tool_retries: bool) -> list[Any]:
         middlewares.append(
             PIIMiddleware(
                 "email",
-                strategy="mask",
+                strategy="redact",
                 detector=EMAIL_PATTERN,
                 apply_to_input=True,
                 apply_to_output=True,
