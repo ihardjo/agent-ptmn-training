@@ -33,13 +33,9 @@ router = APIRouter()
 def trace_name() -> str:
     """What a served run is called in Langfuse.
 
-    Derived rather than configured. Every trace arrived as `LangGraph` — the
-    compiled graph's own name, identical for every LangGraph agent — so eight
-    group instances tracing to one project were indistinguishable in the list.
-
-    From `group()` rather than `schema()`, so the trace name is exactly the app
-    name: a trace in the list can be matched to the app that produced it without
-    translating a hyphen into an underscore.
+    Every trace arrived as `LangGraph`, the compiled graph's own name, leaving
+    eight instances in one project indistinguishable. From `group()` rather than
+    `schema()`, so the trace name is exactly the app name.
     """
     return f"agent-workshop-ai-{group()}"
 
@@ -70,15 +66,13 @@ def message_text(message: Any) -> str:
 def trim_graph_state(*, data: Any) -> Any:
     """Langfuse's mask: a graph state becomes its last message's text.
 
-    LangGraph's root chain reports the whole state — every message plus every
-    seeded skill file — and Langfuse promotes that observation's input and
-    output to the trace's, so the list shows a JSON blob where the question and
-    the answer belong. Masking is the lever that works: trace-level input and
-    output set directly are overwritten by the root chain's on ingest.
+    LangGraph's root chain reports the whole state, and Langfuse promotes that
+    observation's input and output to the trace's. Masking is the only lever
+    that works — trace-level values set directly are overwritten on ingest.
 
-    Last message either way, which is the question on the way in and the final
-    answer on the way out. Untouched when nothing carries text, because an empty
-    string would read as an answer the model did not give.
+    The last message is the question on the way in and the answer on the way
+    out. Untouched when nothing carries text, since an empty string would read
+    as an answer the model did not give.
     """
     if not (
         isinstance(data, dict)
@@ -95,9 +89,8 @@ def trim_graph_state(*, data: Any) -> Any:
 def install_mask() -> None:
     """Bind the mask to the Langfuse client, once and before the first handler.
 
-    The mask lives on the client, and the client is a singleton keyed on the
-    public key that keeps whatever it was built with — so a `CallbackHandler()`
-    constructed first would create an unmasked client for the whole process.
+    The client is a singleton keyed on the public key that keeps whatever it was
+    built with, so a handler constructed first leaves the process unmasked.
     """
     global _MASK_INSTALLED
     if not _MASK_INSTALLED:
@@ -211,9 +204,8 @@ async def upload_file(
 ):
     """Take one file from the chat and write it to the wiki Volume.
 
-    The chat UI's paperclip calls `POST /api/files/upload` on the Node app,
-    which forwards the multipart body here untouched. The response shape is the
-    chat template's — its client shows `pathname` on the chip and puts `error`
+    The chat UI forwards its multipart body here untouched, and the response
+    shape is that template's: it shows `pathname` on the chip and puts `error`
     straight into a toast, so a refusal returns 400 with a sentence in it.
     """
     from agent_server.backends import uploads_backend

@@ -18,7 +18,7 @@ SKILLS_MOUNT = "/skills/"
 
 logger = logging.getLogger(__name__)
 
-## Skill Selection — copy the skills to put inside SELECTED_SKILLS.
+# Available skills:
 # "auditing-data-quality",
 # "checking-due-dates",
 # "computing-target-adherence",
@@ -38,10 +38,9 @@ SELECTED_SKILLS = (
 def skill_files() -> dict[str, Any]:
     """Every file of every selected skill, keyed by its agent-visible path.
 
-    The whole bundle, not just `SKILL.md`: a skill may carry reference files,
-    and seeding only `SKILL.md` made `check-skills`'s reference validation a lie
-    at runtime. Undecodable files are skipped, so a binary in a skill directory
-    costs that file rather than the startup.
+    The whole bundle, not just `SKILL.md`: seeding only `SKILL.md` made
+    `check-skills`'s reference validation a lie at runtime. An undecodable file
+    is skipped, so a binary costs that file rather than the startup.
     """
     files: dict[str, Any] = {}
     for name in SELECTED_SKILLS:
@@ -50,8 +49,6 @@ def skill_files() -> dict[str, Any]:
             if not path.is_file():
                 continue
             try:
-                # Same substitution as the system prompt: a skill's SQL names
-                # the table, and which schema that is differs per group.
                 content = resolve(path.read_text())
             except (UnicodeDecodeError, OSError):
                 logger.warning("skill %s: skipped unreadable file %s", name, path.name)

@@ -101,7 +101,7 @@ def check_size(filename: str, size: int, running_total: int = 0) -> None:
 def safe_session(session: str | None) -> str:
     """The chat id as a directory name; anything unexpected becomes `unattributed`.
 
-    Never raises: an unrecognised session id is a reason to file the upload
+    Never raises — an unrecognised session id is a reason to file the upload
     somewhere predictable, not to refuse a file the user already chose.
     """
     candidate = (session or "").strip()

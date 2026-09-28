@@ -12,10 +12,9 @@ class ChatMessage(BaseModel):
 def conversation_turns(items: list[dict]) -> list["ChatMessage"]:
     """The conversation turns out of a Responses API `input` list.
 
-    Clients replay the items we emitted — `reasoning`, `function_call`,
-    `function_call_output` — and none of those carry a `role`.
-    LangGraph rebuilds its state from the turns alone, so they are skipped rather
-    than failing validation.
+    Replayed `reasoning` / `function_call` / `function_call_output` items carry
+    no `role`, and LangGraph rebuilds state from the turns alone, so they are
+    skipped rather than failing validation.
     """
     return [ChatMessage(**item) for item in items if "role" in item]
 
