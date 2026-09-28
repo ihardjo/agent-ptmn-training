@@ -1,7 +1,7 @@
 """One value points an instance at its group's data.
 
 Eight instances run side by side, one per branch `group-0` … `group-7`, differing
-by `WORKSHOP_SCHEMA` alone. An instance pointed at the wrong schema reads another
+by `WORKSHOP_GROUP` alone. An instance pointed at the wrong schema reads another
 group's tickets and answers confidently from them — nothing errors.
 """
 
@@ -17,8 +17,8 @@ from agent_server.env import TABLE_PLACEHOLDER, resolve, schema, table, volume
 
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
-    monkeypatch.delenv("WORKSHOP_SCHEMA", raising=False)
-    monkeypatch.setattr(env_module, "_SCHEMA_REPORTED", False)
+    monkeypatch.delenv("WORKSHOP_GROUP", raising=False)
+    monkeypatch.setattr(env_module, "_GROUP_REPORTED", False)
 
 
 def test_unset_resolves_to_default():
@@ -30,7 +30,7 @@ def test_unset_resolves_to_default():
 
 @pytest.mark.parametrize("group", [f"group_{i}" for i in range(8)])
 def test_every_group_derives_its_own_table_and_volume(monkeypatch, group: str):
-    monkeypatch.setenv("WORKSHOP_SCHEMA", group)
+    monkeypatch.setenv("WORKSHOP_GROUP", group)
     assert schema() == group
     assert table(group) == f"workshop_ai_platform.{group}.sdlc_tickets"
     assert volume(group) == f"/Volumes/workshop_ai_platform/{group}/agent_wiki"
@@ -39,7 +39,7 @@ def test_every_group_derives_its_own_table_and_volume(monkeypatch, group: str):
 def test_the_resolution_is_logged(monkeypatch, caplog):
     """The log line is what makes a misconfiguration checkable, since pointing
     at the wrong schema is otherwise invisible."""
-    monkeypatch.setenv("WORKSHOP_SCHEMA", "group_2")
+    monkeypatch.setenv("WORKSHOP_GROUP", "group-2")
     with caplog.at_level(logging.INFO, logger="agent_server.env"):
         schema()
         schema()
@@ -50,7 +50,7 @@ def test_the_resolution_is_logged(monkeypatch, caplog):
 def test_whitespace_in_the_variable_does_not_leak_into_a_table_name(monkeypatch):
     """It arrives from a secret scope or a YAML value; a trailing newline would
     otherwise produce `workshop_ai_platform.group_1\\n.sdlc_tickets`."""
-    monkeypatch.setenv("WORKSHOP_SCHEMA", " group_1\n")
+    monkeypatch.setenv("WORKSHOP_GROUP", " group-1\n")
     assert schema() == "group_1"
     assert "\n" not in table(schema())
 
@@ -59,7 +59,7 @@ def test_whitespace_in_the_variable_does_not_leak_into_a_table_name(monkeypatch)
 
 
 def test_the_placeholder_is_replaced(monkeypatch):
-    monkeypatch.setenv("WORKSHOP_SCHEMA", "group_4")
+    monkeypatch.setenv("WORKSHOP_GROUP", "group-4")
     out = resolve(f"SELECT COUNT(*) FROM {TABLE_PLACEHOLDER}")
     assert out == "SELECT COUNT(*) FROM workshop_ai_platform.group_4.sdlc_tickets"
 
@@ -75,7 +75,7 @@ def test_no_placeholder_reaches_the_model(monkeypatch):
     substitution that silently failed would put `{{TABLE}}` into SQL."""
     import agent_server.skills as sk
 
-    monkeypatch.setenv("WORKSHOP_SCHEMA", "group_6")
+    monkeypatch.setenv("WORKSHOP_GROUP", "group-6")
     names = sorted(p.parent.name for p in sk.SKILLS_DIR.glob("*/SKILL.md"))
     monkeypatch.setattr(sk, "SELECTED_SKILLS", tuple(names))
     for path, data in sk.skill_files().items():
@@ -90,13 +90,13 @@ def test_the_system_prompt_is_substituted_too(monkeypatch):
     does, and is read through a different seam."""
     import importlib
 
-    monkeypatch.setenv("WORKSHOP_SCHEMA", "group_7")
+    monkeypatch.setenv("WORKSHOP_GROUP", "group-7")
     import agent_server.agent as agent_mod
 
     reloaded = importlib.reload(agent_mod)
     assert TABLE_PLACEHOLDER not in reloaded.SYSTEM_PROMPT
     assert "workshop_ai_platform.group_7.sdlc_tickets" in reloaded.SYSTEM_PROMPT
-    monkeypatch.delenv("WORKSHOP_SCHEMA")
+    monkeypatch.delenv("WORKSHOP_GROUP")
     importlib.reload(agent_mod)
 
 
@@ -104,10 +104,10 @@ def test_the_system_prompt_is_substituted_too(monkeypatch):
 
 
 def test_the_volume_derives_from_the_schema(monkeypatch):
-    """No second variable to disagree with `WORKSHOP_SCHEMA`."""
+    """No second variable to disagree with `WORKSHOP_GROUP`."""
     from agent_server.backends import wiki_routes
 
-    monkeypatch.setenv("WORKSHOP_SCHEMA", "group_5")
+    monkeypatch.setenv("WORKSHOP_GROUP", "group-5")
     routes = wiki_routes(client=object())
     assert routes, "the tier should exist once a client is available"
     assert all("/group_5/agent_wiki" in repr(b) for b in routes.values()), routes
@@ -117,5 +117,5 @@ def test_the_upload_backend_derives_the_same_path(monkeypatch):
     """The upload route holds its own backend; it must land in the same group."""
     from agent_server.backends import uploads_backend
 
-    monkeypatch.setenv("WORKSHOP_SCHEMA", "group_5")
+    monkeypatch.setenv("WORKSHOP_GROUP", "group-5")
     assert "/group_5/agent_wiki/raw" in repr(uploads_backend(client=object()))

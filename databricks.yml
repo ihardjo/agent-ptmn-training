@@ -10,7 +10,7 @@ bundle:
 # `default` keeps `main` deployable as it stands.
 variables:
   group:
-    description: Unity Catalog schema and per-instance suffix (default, group_0..group_7)
+    description: Per-instance suffix, hyphenated (default, group-0 .. group-7)
     default: default
 
 resources:
@@ -35,8 +35,6 @@ resources:
             value_from: "langfuse-secret"
           - name: LANGFUSE_HOST
             value: "https://agentmonitoring.pertamina.ai"
-          - name: LANGFUSE_TRACE_NAME
-            value: "agent-workshop-ai-${var.group}"
           # Jakarta workspace — managed SQL MCP over workshop_ai_platform.${var.group}
           - name: DATABRICKS_JAKARTA_HOST
             value: "https://dbc-77e33eef-a7e4.cloud.databricks.com"
@@ -45,24 +43,24 @@ resources:
           - name: DATABRICKS_JAKARTA_CLIENT_SECRET
             value_from: "databricks-jakarta-secret"
           # Volume-backed wiki — OKF bundle on a Unity Catalog Volume in Jakarta
-          - name: WORKSHOP_SCHEMA
+          - name: WORKSHOP_GROUP
             value: "${var.group}"
 
       # Resources which this app has access to
       resources:
         - name: 'langfuse-secret'
           secret:
-            scope: agent-workshop-ai-${var.group}
+            scope: agent-${var.group}
             key: langfuse-secret-key
             permission: 'READ'
         - name: 'databricks-jakarta-id'
           secret:
-            scope: agent-workshop-ai-${var.group}
+            scope: agent-${var.group}
             key: databricks-jakarta-id
             permission: 'READ'
         - name: 'databricks-jakarta-secret'
           secret:
-            scope: agent-workshop-ai-${var.group}
+            scope: agent-${var.group}
             key: databricks-jakarta-secret
             permission: 'READ'
 

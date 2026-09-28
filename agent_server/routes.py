@@ -5,11 +5,8 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from langfuse.langchain import CallbackHandler
 
-from langgraph.types import Command
-
 from agent_server.agent import init_agent
-from agent_server.approvals import decisions_from
-from agent_server.env import env
+from agent_server.env import env, group
 from agent_server.skills import skill_files
 from agent_server.models import (
     AssistantMessage,
@@ -32,7 +29,18 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-DEFAULT_TRACE_NAME = "LangGraph"
+def trace_name() -> str:
+    """What a served run is called in Langfuse.
+
+    Derived rather than configured. Every trace arrived as `LangGraph` — the
+    compiled graph's own name, identical for every LangGraph agent — so eight
+    group instances tracing to one project were indistinguishable in the list.
+
+    From `group()` rather than `schema()`, so the trace name is exactly the app
+    name: a trace in the list can be matched to the app that produced it without
+    translating a hyphen into an underscore.
+    """
+    return f"agent-workshop-ai-{group()}"
 
 
 def trace_config(session_id: str | None = None) -> dict:
@@ -46,42 +54,26 @@ def trace_config(session_id: str | None = None) -> dict:
     if not host:
         logger.info("No LANGFUSE_HOST — this run will not be traced.")
         return {}
-    name = env("LANGFUSE_TRACE_NAME") or DEFAULT_TRACE_NAME
-    config: dict = {"callbacks": [CallbackHandler()], "run_name": name}
+    config: dict = {"callbacks": [CallbackHandler()], "run_name": trace_name()}
     if session_id:
         config["metadata"] = {"langfuse_session_id": session_id}
     return config
 
 
-def run_config(session_id: str | None) -> dict:
-    """Tracing plus the thread the checkpointer keys a paused run on.
-
-    A tool awaiting approval lives in the checkpointer under this id, so without
-    a stable session the run could never be resumed. Unset falls back to a
-    per-request id, which simply means approvals cannot be resumed.
-    """
-    config = trace_config(session_id)
-    config["configurable"] = {"thread_id": session_id or new_completion_id()}
-    return config
-
-
-def agent_stream(agent: Any, messages: list, session_id: str | None, resume: list[dict] | None = None):
-    """The agent's event stream for one request, fresh or resumed.
+def agent_stream(agent: Any, messages: list, session_id: str | None):
+    """The agent's event stream for one request.
 
     `files=` seeds the skills tier into this turn's state, which is how the
-    model sees skill content it never wrote. `resume` continues a paused run
-    instead: the client replays the whole conversation, but the graph picks up
-    where it stopped rather than re-running it.
+    model sees skill content it never wrote.
     """
-    payload: Any = (
-        Command(resume={"decisions": resume})
-        if resume
-        else {
+    return agent.astream(
+        input={
             "messages": [{"role": m.role, "content": normalize_content(m.content)} for m in messages],
             "files": skill_files(),
-        }
+        },
+        stream_mode=["updates", "messages"],
+        config=trace_config(session_id),
     )
-    return agent.astream(payload, stream_mode=["updates", "messages"], config=run_config(session_id))
 
 
 def sse_response(chunks: AsyncGenerator[str, None]) -> StreamingResponse:
@@ -140,11 +132,7 @@ async def invocations_compat(body: dict, http_request: Request):
     """
     session_id = http_request.headers.get("X-Session-Id") or body.get("context", {}).get("conversation_id")
     agent = await init_agent()
-    items = body.get("input", [])
-    # An `mcp_approval_response` in the replayed history means this request is a
-    # decision on a paused run, not a new question.
-    resume = decisions_from(items)
-    stream = agent_stream(agent, conversation_turns(items), session_id, resume=resume)
+    stream = agent_stream(agent, conversation_turns(body.get("input", [])), session_id)
     item_id = new_completion_id()
 
     if body.get("stream", False):
