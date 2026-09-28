@@ -10,7 +10,7 @@ env:
     value: "300"
   # Langfuse observability (optional — agent starts without these)
   - name: LANGFUSE_PUBLIC_KEY
-    value: "pk-lf-091592b0-696e-4037-bd8b-8ebba8ed862e"
+    value: "pk-lf-d53026c9-413f-4457-b3d6-526141d54f4c"
   - name: LANGFUSE_SECRET_KEY
     valueFrom: "langfuse-secret"
   - name: LANGFUSE_HOST
@@ -23,4 +23,4 @@ env:
   - name: DATABRICKS_JAKARTA_CLIENT_SECRET
     valueFrom: "databricks-jakarta-secret"
   - name: WORKSHOP_GROUP
-    value: "group-0"
+    value: "group-7"
