@@ -40,31 +40,8 @@ give different totals, because cancelled work carries the `Done` category.»
 all. State the basis — a velocity computed over only the pointed tickets
 measures something different from one computed over all of them.»
 
-## 3. Effort
 
-«The planned versus unplanned split, with the effort basis stated. If effort is
-recorded against work that never closed, say so — it moves this figure.»
-
-## 4. Quality
-
-### 4.1 Root causes
-
-| Cause | Tickets | Share |
-|---|---|---|
-| «cause» | «n» | «pct» |
-
-«Say which ticket types carry a root cause at all, and whether any cause
-actually leads. A top row that is two points clear of the second is a maximum,
-not a finding.»
-
-### 4.2 Data quality caveats
-
-«Defects in this period's data that bear on the figures above: impossible
-timestamps, closures with no resolution, durations recorded against unclosed
-work, status disagreeing with its category. Each one with the count it
-affects.»
-
-## 5. Appendix — method
+## 3. Appendix — method
 
 «The queries behind each figure, and anything excluded from them. A reader who
 disagrees with a number should be able to find out why without asking.»

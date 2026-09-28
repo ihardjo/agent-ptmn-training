@@ -18,40 +18,33 @@ writing anything and follow it exactly. It is the approved document transcribed,
 so when the signed version changes this file is what has to be re-transcribed —
 it is a copy, and copies drift.
 
-Reproduce every heading, in the template's order, with its wording and numbering
-unchanged. The headings are what make one sprint's report comparable to the
-last one's, and a renamed or reordered section breaks that comparison silently.
-
-Where the data does not hold what a section asks for, keep the heading and say
-so beneath it. A named gap is an answer; a dropped section reads as an
-oversight, and the reader cannot tell the two apart.
-
-Replace every placeholder. An `«angle-quoted»` string surviving into the reply
-is a hole, not a value.
+Reproduce every heading, in the template's order and wording. Where a period has
+nothing to report under one, keep the heading and say so: a named gap is an
+answer, a dropped section reads as an oversight, and the reader cannot tell the
+two apart. Replace every placeholder — an `«angle-quoted»` string surviving into
+the reply is a hole, not a value.
 
 ## Getting the figures
 
-This skill computes nothing. Every section is answerable from the ticket table,
-and the numbers come from the analysis skills, which carry the caveats that make
-each figure honest: the effort split from `splitting-planned-unplanned-work`,
-velocity from `measuring-sprint-velocity`, cause distribution from
-`summarising-root-causes`, and the caveats themselves from
-`auditing-data-quality`.
+Three sections, and only two of them carry numbers.
 
-Run the analysis first, then report its result together with its caveat. A
-figure given without the qualification the analysis attached to it has had the
-uncertainty laundered out of it — the failure a template makes easiest, because
-a heading asks for a number and the layout leaves nowhere to say what it rests
-on. Section 5 is that room; use it, and keep the short form next to the figure
-rather than only in the appendix.
+**Throughput** is counts off the ticket table. Say which column the closed count
+came from: `status` and `status_category` disagree, because cancelled work
+carries the `Done` category, and the reader cannot tell which you used.
 
-Nothing in the layout asks for a resolution target, an escalation route, or a
-risk owner. The table holds none of those, so a section needing one would have
-no honest filling — if a request wants them, say the ticket data does not carry
-them rather than reaching for a proxy.
+**Velocity** comes from `measuring-sprint-velocity`, with the coverage caveat it
+attaches — roughly half the rows carry no `story_points`, so a velocity figure
+describes pointed work rather than all delivery.
+
+Report each figure together with its caveat. A number given without the
+qualification the analysis attached to it has had the uncertainty laundered out
+of it, which is the failure a template makes easiest: the heading asks for a
+number and the layout leaves nowhere to say what it rests on. Section 3 is that
+room, and the short form belongs next to the figure as well.
 
 ## The rules a formatting request does not relax
 
 Presentation is not an exception. Staff are reported in aggregate and by rank,
-never by name or address, however the template's columns are labelled. No figure
-is invented to fill a cell.
+never by name or address. No figure is invented to fill a cell, and the table
+holds no resolution target, escalation route or risk owner — asked for one, say
+the ticket data does not carry it rather than reaching for a proxy.
