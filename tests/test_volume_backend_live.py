@@ -73,20 +73,85 @@ def live_notes(live_client):
     )
 
 
-def test_ls_reports_files_and_directories(live_wiki):
-    r = live_wiki.ls("/")
+# The tier is greenfield and the agent writes to it, so these tests provision
+# what they read. Depending on a seeded bundle made them assert files that a
+# reset removed, and depending on whatever the agent last wrote would make them
+# fail for reasons unrelated to the API.
+
+def _docx_bytes(text: str) -> bytes:
+    """A minimal but genuine Word document."""
+    import io
+
+    from docx import Document
+
+    doc, buf = Document(), io.BytesIO()
+    doc.add_paragraph(text)
+    doc.save(buf)
+    return buf.getvalue()
+
+
+TARGETS = """---
+type: Service Level Policy
+---
+
+# Targets
+
+| Priority | Target (working hours) |
+|---|---|
+| P2 | 80 |
+
+| Incident | Target (working hours) |
+|---|---|
+| P1 | 8 |
+"""
+
+
+@pytest.fixture(scope="module")
+def fixture_tree(live_wiki, live_raw):
+    """A throwaway subtree in both tiers, removed afterwards.
+
+    Module-scoped: one setup and teardown for the whole file, since each write
+    is a round trip to another region.
+    """
+    root = f"/_livetest-{uuid.uuid4().hex[:8]}"
+    written = {
+        "index": f"{root}/index.md",
+        "targets": f"{root}/policies/resolution-targets.md",
+        "basis": f"{root}/definitions/duration-basis.md",
+    }
+    live_wiki.write(written["index"], "# Index\n\n* [Targets](/policies/x.md) - t\n")
+    live_wiki.write(written["targets"], TARGETS)
+    live_wiki.write(written["basis"], "---\ntype: Definition\n---\n\nworking versus waiting\n")
+    raw_docx = f"{root}/policies/SOP-Layanan-IT.docx"
+    # A real `.docx`, not a stub with the right extension: `glob` scans by
+    # decoding, and `documents.decode()` sends a `.docx` through python-docx —
+    # so a file that only looks like one is skipped and never matches.
+    live_raw.upload_bytes(raw_docx, _docx_bytes("SOP Layanan IT"))
+    written["raw_docx"] = raw_docx
+    written["root"] = root
+    try:
+        yield written
+    finally:
+        for path in (written["index"], written["targets"], written["basis"]):
+            live_wiki.delete(path)
+        live_raw.delete(raw_docx)
+
+
+def test_ls_reports_files_and_directories(live_wiki, fixture_tree):
+    root = fixture_tree["root"]
+    r = live_wiki.ls(root + "/")
     assert r.error is None, r.error
     by_path = {e["path"]: e for e in r.entries}
-    assert by_path["/index.md"]["is_dir"] is False
-    assert by_path["/policies/"]["is_dir"] is True
+    assert by_path[f"{root}/index.md"]["is_dir"] is False
+    assert by_path[f"{root}/policies/"]["is_dir"] is True
     # `size` and `modified_at` are best-effort in the protocol; assert the
     # attribute names the fake relies on actually arrive from the API.
-    assert by_path["/index.md"]["size"] > 0
-    assert by_path["/index.md"]["modified_at"]
+    assert by_path[f"{root}/index.md"]["size"] > 0
+    assert by_path[f"{root}/index.md"]["modified_at"]
 
 
-def test_read_returns_the_seeded_target(live_wiki):
-    r = live_wiki.read("/policies/resolution-targets.md")
+def test_read_returns_the_written_document(live_wiki, fixture_tree):
+    r = live_wiki.read(fixture_tree["targets"])
     assert r.error is None, r.error
     body = r.file_data["content"]
     assert "type: Service Level Policy" in body
@@ -101,34 +166,33 @@ def test_missing_file_maps_to_a_not_found_result(live_wiki):
     assert "not found" in r.error, f"unmapped API error: {r.error}"
 
 
-def test_grep_finds_the_target_across_the_bundle(live_wiki):
+def test_grep_finds_the_target_across_the_bundle(live_wiki, fixture_tree):
     r = live_wiki.grep("Target (working hours)")
     assert r.error is None, r.error
-    # Two matches, one file: the concept carries a Bug table and an Incident
-    # table, each with its own header row.
-    assert {m["path"] for m in r.matches} == {"/policies/resolution-targets.md"}
-    assert len(r.matches) == 2
+    # Two matches in the one file: it carries two tables, each with a header.
+    ours = [m for m in r.matches if m["path"] == fixture_tree["targets"]]
+    assert len(ours) == 2, r.matches
 
 
-def test_glob_walks_subdirectories(live_wiki):
+def test_glob_walks_subdirectories(live_wiki, fixture_tree):
     r = live_wiki.glob("*.md")
     assert r.error is None, r.error
     paths = {m["path"] for m in r.matches}
-    assert "/policies/resolution-targets.md" in paths
-    assert "/definitions/duration-basis.md" in paths
+    assert fixture_tree["targets"] in paths
+    assert fixture_tree["basis"] in paths
 
 
-def test_the_landing_tree_holds_the_non_markdown_source(live_raw):
+def test_the_landing_tree_holds_the_non_markdown_source(live_raw, fixture_tree):
     """`raw/` is where a file lands in the format it arrived in."""
     paths = {m["path"] for m in live_raw.glob("*.docx").matches}
-    assert "/policies/SOP-Layanan-IT.docx" in paths
+    assert fixture_tree["raw_docx"] in paths
 
 
-def test_the_landing_tree_cannot_see_the_wiki(live_raw):
+def test_the_landing_tree_cannot_see_the_wiki(live_raw, fixture_tree):
     """Each prefix is its own bundle root: a wiki concept is not reachable
     from the tier mounted beside it."""
     paths = {m["path"] for m in live_raw.glob("*.md").matches}
-    assert "/policies/resolution-targets.md" not in paths
+    assert fixture_tree["targets"] not in paths
 
 
 def test_write_read_and_delete_round_trip(live_notes):
