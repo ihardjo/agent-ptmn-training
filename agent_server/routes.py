@@ -9,7 +9,7 @@ from langgraph.types import Command
 
 from agent_server.agent import init_agent
 from agent_server.approvals import decisions_from
-from agent_server.env import env
+from agent_server.env import env, schema
 from agent_server.skills import skill_files
 from agent_server.models import (
     AssistantMessage,
@@ -32,7 +32,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-DEFAULT_TRACE_NAME = "LangGraph"
+def trace_name() -> str:
+    """What a served run is called in Langfuse.
+
+    Derived rather than configured. Every trace arrived as `LangGraph` — the
+    compiled graph's own name, identical for every LangGraph agent — so eight
+    group instances tracing to one project were indistinguishable in the list.
+    Deriving it from the schema means a wrong `WORKSHOP_SCHEMA` mislabels the
+    traces as well as pointing at the wrong data, which is the failure being
+    visible rather than silently correct-looking.
+    """
+    return f"agent-workshop-ai-{schema()}"
 
 
 def trace_config(session_id: str | None = None) -> dict:
@@ -46,8 +56,7 @@ def trace_config(session_id: str | None = None) -> dict:
     if not host:
         logger.info("No LANGFUSE_HOST — this run will not be traced.")
         return {}
-    name = env("LANGFUSE_TRACE_NAME") or DEFAULT_TRACE_NAME
-    config: dict = {"callbacks": [CallbackHandler()], "run_name": name}
+    config: dict = {"callbacks": [CallbackHandler()], "run_name": trace_name()}
     if session_id:
         config["metadata"] = {"langfuse_session_id": session_id}
     return config

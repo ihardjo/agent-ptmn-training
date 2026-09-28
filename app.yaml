@@ -15,9 +15,6 @@ env:
     valueFrom: "langfuse-secret"
   - name: LANGFUSE_HOST
     value: "https://agentmonitoring.pertamina.ai"
-  # Per-branch, like WORKSHOP_SCHEMA below: app.yaml has no bundle variable.
-  - name: LANGFUSE_TRACE_NAME
-    value: "agent-workshop-ai-default"
   # Jakarta workspace — managed SQL MCP over the WORKSHOP_SCHEMA schema
   - name: DATABRICKS_JAKARTA_HOST
     value: "https://dbc-77e33eef-a7e4.cloud.databricks.com"
