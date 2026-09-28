@@ -23,4 +23,4 @@ env:
   - name: DATABRICKS_JAKARTA_CLIENT_SECRET
     valueFrom: "databricks-jakarta-secret"
   - name: WORKSHOP_GROUP
-    value: "group-0"
+    value: "group-4"
