@@ -59,10 +59,10 @@ def test_the_report_template_is_reachable(seeded):
     # On the shape rather than one heading's wording, so that dropping a section
     # the table cannot fill renumbers the rest without failing here.
     numbered = re.findall(r"^## (\d+)\. \S", body, re.MULTILINE)
+    assert numbered, "the template has no numbered sections"
     assert numbered == [str(i) for i in range(1, len(numbered) + 1)], (
-        f"the template lost its numbered sections, found {numbered}"
+        f"the template's sections do not run 1..n, found {numbered}"
     )
-    assert len(numbered) >= 4
 
 
 def test_an_unselected_skill_contributes_nothing(monkeypatch):
