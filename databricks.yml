@@ -30,7 +30,7 @@ resources:
             value: "300"
           # Langfuse observability (optional — agent starts without these)
           - name: LANGFUSE_PUBLIC_KEY
-            value: "pk-lf-091592b0-696e-4037-bd8b-8ebba8ed862e"
+            value: "pk-lf-6d228091-5dfd-4622-bc7c-4b778ad93daf"
           - name: LANGFUSE_SECRET_KEY
             value_from: "langfuse-secret"
           - name: LANGFUSE_HOST
