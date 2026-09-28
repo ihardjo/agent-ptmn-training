@@ -1,9 +1,9 @@
 """Reading configuration out of the environment, tolerantly.
 
-Values are stripped on the way in, because a secret saved with a trailing
-newline is rejected downstream as a wrong credential rather than a malformed
-one. The second half derives everything that differs between the eight workshop
-instances from one variable, `WORKSHOP_GROUP`.
+Values are stripped on the way in, since a secret saved with a trailing newline
+reads downstream as a wrong credential rather than a malformed one. The second
+half derives everything that differs between workshop instances from
+`WORKSHOP_GROUP`.
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ import os
 
 logger = logging.getLogger(__name__)
 
-# Once per variable per process: the condition cannot change mid-process, and a
-# warning per request trains people to ignore the log.
+# Once per variable per process: a warning per request trains people to ignore
+# the log, and the condition cannot change mid-process anyway.
 _REPORTED: set[str] = set()
 
 
@@ -39,10 +39,8 @@ def env(name: str, default: str | None = None) -> str | None:
 # ── which group this instance is ─────────────────────────────────────────────
 #
 # Eight instances run side by side, one per branch `group-0` … `group-7`, and
-# `WORKSHOP_GROUP=group-0` points one at that group's data.
-
-# Unset resolves to `default` and logs what it resolved to, since pointing at
-# the wrong group is otherwise silent.
+# `WORKSHOP_GROUP` points one at that group's data. Unset resolves to `default`
+# and logs what it resolved to, since the wrong group is otherwise silent.
 
 CATALOG = "workshop_ai_platform"
 DEFAULT_GROUP = "default"
@@ -64,9 +62,8 @@ def group() -> str:
 def schema() -> str:
     """The Unity Catalog schema this instance reads, reported once.
 
-    Hyphens become underscores. Accepting either form is deliberate: a value
-    written `group_0` by hand still resolves, rather than producing a schema
-    that does not exist and a first query that fails.
+    Hyphens become underscores, so a value hand-written `group_0` resolves too
+    rather than naming a schema that does not exist.
     """
     global _GROUP_REPORTED
     name = group().replace("-", "_")

@@ -14,20 +14,8 @@ logger = logging.getLogger(__name__)
 
 _mcp_tools: Optional[list[Any]] = None
 
-# One discovery at a time. Not an optimisation: the client holds no session,
-# so concurrent `get_tools()` calls each open their own, and the server drops
-# the extras. Four cold-start requests measured without this returned 3, 0, 3,
-# 0 tools — half the agents built with no way to query, and only a log line to
-# say so.
 _mcp_tools_lock = asyncio.Lock()
-
-# Why the SQL tool is absent, or None while it is present. Set on every
-# resolution attempt, so a server that recovers mid-session stops warning.
 _mcp_unavailable: Optional[str] = None
-
-# `mcp.client.caching.CacheMode` (SEP-2549), spelled out rather than imported:
-# the type belongs to the MCP SDK's own caching layer, which the Databricks
-# client does not use, so importing it would claim a coupling that is not there.
 CACHE_MODES = ("use", "refresh", "bypass")
 
 
@@ -38,15 +26,12 @@ async def mcp_tools(
 ) -> list[Any]:
     """Every SQL tool the server exposes, or only `names` of them.
 
-    `MCPAdapter.list_tools(cache_mode="use")` reimplemented, because that
-    adapter reaches a server by URL and ours needs Databricks OAuth —
-    `DatabricksMultiServerMCPClient` has no cache and re-lists every call.
-    Failures are not cached, so a recovered server degrades this run only.
+    `MCPAdapter.list_tools` reimplemented, because that adapter reaches a server
+    by URL and ours needs Databricks OAuth. Failures are not cached, so a
+    recovered server degrades this run only.
 
-    Args:
-        names: the tools to mount, or None for every tool the server offers.
-        cache_mode: `use` serves the cached list, `refresh` repopulates it,
-            `bypass` calls the server and leaves the cache alone.
+    `cache_mode` is `use` to serve the cached list, `refresh` to repopulate it,
+    or `bypass` to call the server and leave the cache alone.
     """
     global _mcp_tools
     if cache_mode not in CACHE_MODES:
@@ -56,7 +41,7 @@ async def mcp_tools(
     if discovered is None:
         async with _mcp_tools_lock:
             # Re-checked under the lock: another request may have filled it
-            # while this one waited, which is the whole point of the lock.
+            # while this one waited.
             if cache_mode == "use" and _mcp_tools is not None:
                 discovered = _mcp_tools
             else:

@@ -1,7 +1,6 @@
-"""Assembling the agent: the model, its prompt, its tools, and its tiers.
+"""The composition root: the model, its prompt, its tools and its tiers.
 
-The composition root and nothing else — what each part *is* lives in the module
-that owns it.
+What each part *is* lives in the module that owns it.
 """
 
 import logging

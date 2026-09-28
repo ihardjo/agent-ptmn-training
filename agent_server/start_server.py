@@ -1,3 +1,5 @@
+"""The HTTP server: the agent's routes, and a proxy to the chat frontend."""
+
 import argparse
 import logging
 from pathlib import Path
@@ -9,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import Response, StreamingResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-# Load env vars from .env before importing the agent for proper auth
+# Before importing the agent, which reads credentials at import time.
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
 
 from agent_server.env import env  # noqa: E402
@@ -22,8 +24,7 @@ logging.basicConfig(
     format="%(levelname)s %(name)s: %(message)s",
 )
 
-# ── Chat proxy middleware ──────────────────────────────────────────────────────
-# Proxies frontend paths to the Next.js app on CHAT_APP_PORT.
+# ── Chat proxy: frontend paths go to the Next.js app on CHAT_APP_PORT ─────────
 
 _CHAT_PORT = env("CHAT_APP_PORT", "3000")
 _PROXY_TIMEOUT = float(env("CHAT_PROXY_TIMEOUT_SECONDS", "300"))
@@ -34,6 +35,8 @@ _proxy_client = httpx.AsyncClient(timeout=_PROXY_TIMEOUT)
 
 
 class ChatProxyMiddleware(BaseHTTPMiddleware):
+    """Forwards the frontend's paths to the chat app, streaming SSE through."""
+
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
         if path in _PROXY_EXACT or path.startswith(_PROXY_PREFIXES):
@@ -75,6 +78,7 @@ app.add_middleware(ChatProxyMiddleware)
 
 
 def main():
+    """Run the server on `--port`, `$PORT`, or 8000."""
     parser = argparse.ArgumentParser(description="Run the agent server.")
     parser.add_argument(
         "--port",
