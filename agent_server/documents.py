@@ -1,20 +1,9 @@
 """Turning a source document's bytes into text the agent can read.
 
-The `/wiki/raw/` tier holds what people put there, and people do not only put
-markdown there. A `.docx` is a ZIP of XML, so it has to be *extracted* rather
-than decoded — `bytes.decode("utf-8")` raises on it, which is why the tier
-previously showed such a file in `ls` and refused it everywhere else.
-
-Extraction is kept here rather than in `backends.py` because it is a different
-concern: one module knows the Files API, this one knows document formats. It
-also means the extraction is testable without a Volume or a client.
-
-**What this does not do.** It recovers text, not fidelity. Styling, images,
-headers and footers are dropped. Tables are kept, rendered as markdown, because
-a policy document keeps its targets in a table and losing the rows would lose
-the only part the agent needs. Rendering them as markdown rather than as loose
-lines is deliberate: every other document in the bundle states its targets in a
-markdown table, so the extracted text reads like the corpus around it.
+`/wiki/raw/` holds what people put there, and a `.docx` is a ZIP of XML that
+`bytes.decode()` raises on. Text is recovered, not fidelity: styling, images and
+headers are dropped, but tables are kept as markdown because that is where a
+policy document keeps its targets.
 """
 
 from __future__ import annotations

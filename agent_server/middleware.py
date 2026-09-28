@@ -23,13 +23,10 @@ def _is_rate_limited(exc: BaseException, depth: int = 0) -> bool:
     """Whether this failure is the SQL endpoint asking to be called less often.
 
     Matched on the response where one is attached and on the text otherwise,
-    because the exception arrives through the MCP client rather than from an
-    HTTP call this code made, and its type is not guaranteed.
-
-    Recursive because the MCP client runs its transport in a task group, so the
-    429 arrives wrapped: `str()` on the group is "unhandled errors in a
-    TaskGroup (1 sub-exception)" and says nothing about the status. Matching
-    only the outer layer is why the first version of this never fired.
+    since the exception arrives through the MCP client and its type is not
+    guaranteed. Recursive because the transport runs in a task group, so the 429
+    arrives wrapped — matching only the outer layer is why the first version
+    never fired.
     """
     if depth > 3:
         return False

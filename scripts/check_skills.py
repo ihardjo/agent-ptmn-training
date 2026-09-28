@@ -2,22 +2,13 @@
 """Check the skills tier against the published Agent Skills authoring standard.
 
 The tier is instructions that reach the model's prompt, so a limit checked by
-eye is a limit that drifts. This is the command that says no.
+eye is a limit that drifts.
 
     uv run check-skills                 # the repository tier
     uv run check-skills --dir <path>    # any tier, used by the fixtures
 
-Checks, in the order the standard states them:
-
-  name          <=64 chars, ^[a-z0-9-]+$, no reserved vendor word, no XML tag,
-                and matching its directory, so a rename cannot half-land
-  description   non-empty, <=1024 chars, no XML tag, third person
-  body          under 500 lines
-  references    resolve inside the skill, and one level deep only
-  risk          no scripts, no URLs, no credentials, no path traversal
-  redirects     the skill-to-skill reference graph is acyclic
-
-Exits non-zero when any skill violates any of them.
+Checks name, description, body length, bundled references, risk indicators and
+the acyclic redirect graph. Exits non-zero on any violation.
 """
 
 from __future__ import annotations

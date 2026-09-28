@@ -1,16 +1,9 @@
 """Applying this repo's changes to the sparse-cloned chat template.
 
-The template is not vendored — it is cloned at startup and gitignored, so the changes have to
-live here and be re-applied every time. Four files' worth, described in
-`frontend_overlay/README.md`.
-
-**The design rule is that drift fails loudly.** Every anchor below is checked before anything is
-written, and a template whose text has moved stops the startup naming the file and the anchor.
-The alternative is a patch that silently no-ops, which puts the paperclip back exactly where it
-was — visibly present and quietly broken. That is the failure this overlay exists to fix and the
-one it could most easily reintroduce.
-
-Applying twice is a no-op: each patch checks for its own result first.
+The template is cloned at startup and gitignored, so the changes live here and
+are re-applied every time. **Drift fails loudly**: every anchor is checked
+before anything is written, because a patch that silently no-ops leaves the
+paperclip visibly present and quietly broken. Applying twice is a no-op.
 """
 from __future__ import annotations
 

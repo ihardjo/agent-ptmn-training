@@ -1,8 +1,7 @@
 """Reaching the Jakarta workspace: the SDK client, and the MCP client on top.
 
-Kept apart from `tools.py` because this is how the agent *connects*, not what
-it can *do*. Separating them also keeps the imports acyclic: `mcp` needs the
-client, and `tools` needs `mcp` to assemble the tool list.
+Kept apart from `tools.py` because this is how the agent connects, not what it
+can do, which also keeps the imports acyclic.
 """
 
 import logging
@@ -19,14 +18,10 @@ logger = logging.getLogger(__name__)
 def jakarta_workspace_client() -> Optional[WorkspaceClient]:
     """A client for the Jakarta workspace, or None when it is not configured.
 
-    The host is explicit rather than derived. The ambient Databricks
-    environment belongs to the workspace this app runs in, which is not the
-    one holding the data.
-
-    `DATABRICKS_JAKARTA_PROFILE` runs under a CLI profile instead, for a
-    laptop whose workspace has no service principal yet. The deployed app has
-    no profile to fall back on, so it is unset there and the credentials below
-    are what count.
+    The host is explicit: the ambient Databricks environment belongs to the
+    workspace this app runs in, not the one holding the data.
+    `DATABRICKS_JAKARTA_PROFILE` runs under a CLI profile instead, for a laptop
+    with no service principal; the deployed app has no profile to fall back on.
     """
     if profile := env("DATABRICKS_JAKARTA_PROFILE"):
         return WorkspaceClient(profile=profile)

@@ -1,23 +1,8 @@
-"""Pseudonymising staff addresses before the model sees them.
+"""The PII net: what it masks, and that it is on where it should be.
 
-**Read this before changing the configuration.** An earlier version ran on the
-way *out* (`apply_to_output` with `strategy="redact"`). Every test passed, it
-worked under `ainvoke`, and it protected no served request at all: both routes
-stream with `astream(stream_mode=["updates", "messages"])`, and the answer is
-emitted token by token on the `messages` channel *before* `after_model`
-rewrites state. langchain's stream transformer would cover that, but it reads
-langgraph v3 protocol events and never sees legacy `AIMessageChunk` tuples.
-
-Two lessons are encoded here.
-
-A synthetic `AIMessage` cannot tell you whether the net works, so the
-behavioural tests below run against **the instance `init_agent` actually
-builds**, recovered by capturing what it hands to `create_deep_agent`, rather
-than a hand-written copy of the configuration that could drift from it.
-
-And the wiring is as easy to get wrong as the settings: the `flag_pii` branch
-was once inverted, so the default — every served request — silently got no
-middleware at all. `test_the_net_is_on_by_default` is the guard for that.
+`PIIMiddleware` pseudonymises identities before the model sees them. It is on by
+default for serving and off for evaluation, so a scored run measures the model
+rather than the net.
 """
 
 from __future__ import annotations

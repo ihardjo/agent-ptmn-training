@@ -2,13 +2,9 @@
 """
 Discover available tools and data sources for Databricks agents.
 
-This script scans for:
-- Unity Catalog functions (data retrieval tools e.g. SQL UDFs)
-- Unity Catalog tables (data sources)
-- Vector search indexes (RAG data sources)
-- Genie spaces (conversational interface over structured data)
-- Custom MCP servers (Databricks apps with name mcp-*)
-- External MCP servers (via Unity Catalog connections)
+Scans for Unity Catalog functions and tables, vector search indexes, Genie
+spaces, and MCP servers (both Databricks apps named `mcp-*` and external ones
+reached through UC connections).
 """
 
 import json

@@ -1,17 +1,8 @@
 """Token usage is reported once per run, not once per chunk.
 
-`databricks_langchain` 0.20.0 attaches *cumulative* usage to every streamed
-chunk. Anything that accumulates usage across a stream therefore adds the same
-tokens once per chunk. Measured live against `databricks-glm-5-3-flash`: 144 of
-145 chunks carried usage, a true total of 469 tokens summed to 33,116 — an
-inflation of 70x.
-
-The failure is silent and points the wrong way. Nothing errors; a number is
-wrong in the direction that makes the agent look expensive, so acting on it
-means optimising a prompt that was never the cost.
-
-These tests use synthetic chunks rather than the endpoint, so they pin the
-accounting without a workspace. The live before/after was measured separately.
+`databricks_langchain` 0.20.0 attaches cumulative usage to every streamed chunk,
+so anything summing them inflates the total — measured at 70x live. These use
+synthetic chunks, so they pin the accounting without a workspace.
 """
 
 from __future__ import annotations

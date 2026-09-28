@@ -1,12 +1,8 @@
 """What of a skill actually reaches the model's filesystem.
 
-`check-skills` validates that a bundled reference link resolves inside the
-skill directory. That check is only meaningful if the referenced file is also
-*seeded*, and for a while it was not: `skill_files()` seeded `SKILL.md` alone,
-so a link could pass conformance and point at a path that did not exist in the
-filesystem the model reads. The skill then instructed the model to open a file
-that was not there — which reads, from a trace, as the model ignoring its own
-skill.
+`check-skills` validates that a bundled reference link resolves, which is only
+meaningful if the file is also seeded. For a while it was not, so a skill could
+tell the model to open a file that was not there.
 """
 
 from __future__ import annotations

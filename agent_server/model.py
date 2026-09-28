@@ -1,28 +1,9 @@
-"""The chat model, and the streaming-usage bug it has to work around.
+"""The chat model, and the streaming-usage bug it works around.
 
-`databricks_langchain` 0.20.0 attaches **cumulative** usage metadata to every
-streamed chunk rather than to the last one. Each chunk restates the running
-totals, so a consumer that accumulates usage across a stream — Langfuse, a cost
-dashboard, anything summing `usage_metadata` — adds the same tokens once per
-chunk and reports a multiple of the truth.
-
-Measured against `databricks-glm-5-3-flash`: a fifteen-line answer arrived as 57
-chunks, 56 of them carrying usage. The true total was 405 tokens; summing every
-chunk gives 11,953, an inflation of **29.5x**. The input count is worse in kind
-than in size — 23 input tokens restated 56 times — because it makes a short
-prompt look like a context-window problem.
-
-**The failure is silent and it points the wrong way.** Nothing errors; a number
-is simply wrong, and wrong in the direction that makes the agent look
-expensive. Acting on it means optimising a prompt that was never the cost.
-
-The fix is to make the stream say once what it currently says continuously:
-strip usage from every chunk, keep the last one, and emit a single trailing
-chunk carrying the totals. Ported from the `brd-deep-agent` repo, which hit the
-same bug on the same version.
-
-Remove this when `databricks_langchain` emits usage only on the final chunk —
-`UsageRelay` is a workaround with a version attached, not a design.
+`databricks_langchain` 0.20.0 attaches cumulative usage to every streamed chunk,
+so a consumer that sums them reports a multiple of the truth — measured at 29.5x
+on a 405-token run. Remove this once the package emits usage only on the last
+chunk.
 """
 
 from __future__ import annotations
@@ -40,9 +21,8 @@ logger = logging.getLogger(__name__)
 class UsageRelay:
     """Strips cumulative usage from every chunk and re-emits only the final total.
 
-    Held apart from the model class because the sync and async streams differ
-    only in how they iterate, and the accounting they would otherwise duplicate
-    is the part worth getting right once.
+    Apart from the model class because the sync and async streams differ only in
+    how they iterate.
     """
 
     def __init__(self) -> None:
@@ -53,8 +33,7 @@ class UsageRelay:
         msg = chunk.message
         if not isinstance(msg, AIMessageChunk) or msg.usage_metadata is None:
             return chunk
-        # Last wins rather than accumulating: the values are already cumulative,
-        # so the final chunk's figures are the run's totals. Summing them here
+        # Last wins, not sum: the values are already cumulative, so adding them
         # would reproduce the bug on the other side of the fix.
         self._last = msg.usage_metadata
         return ChatGenerationChunk(
@@ -65,9 +44,8 @@ class UsageRelay:
     def tail(self) -> ChatGenerationChunk | None:
         """The one trailing chunk carrying the totals, or None if none were seen.
 
-        None matters: a stream that carried no usage at all must not gain an
-        empty usage record, which would report zero tokens as a fact rather
-        than as an absence.
+        None rather than zeros: a stream that reported nothing must not gain a
+        usage record stating zero tokens as a fact.
         """
         if self._last is None:
             return None

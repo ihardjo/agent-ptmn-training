@@ -2,16 +2,15 @@
 """Measure which skills the agent reads, against the selection query set.
 
 Answer quality and skill selection fail independently, so they are measured
-separately. This drives the running local server rather than the agent
-in-process, because a skill read is only observable in the tool calls.
+separately. Drives the running local server rather than the agent in-process,
+because a skill read is only observable in the tool calls.
 
     uv run start-server --port 8099        # in another shell
     uv run measure-skill-selection --port 8099
 
-Reports per-skill triggering accuracy. The spec requires re-running this
-across the whole menu whenever a skill is added or a description widened --
-a broadened description steals triggers from its neighbours, and that shows
-up as a fall in *their* accuracy, not its own.
+Re-run across the whole menu whenever a description is widened: a broadened
+description steals triggers from its neighbours, which shows up as a fall in
+*their* accuracy rather than its own.
 """
 
 from __future__ import annotations
@@ -38,14 +37,10 @@ SKILLS_PREFIX = "/skills/"
 def ask(base_url: str, question: str, timeout: int, retries: int = 3) -> dict:
     """One question to the agent, returning the skill paths it read.
 
-    A failed request is reported as an error and **never** as a result. A
-    request that dies returns zero skill reads, which is indistinguishable
-    from the agent correctly reading nothing -- so scoring it would turn an
-    outage into a pass on every `avoid` item and a failure on every
-    `trigger` one. Errored items are excluded from accuracy instead.
-
-    Retries exist because the upstream SQL server returns 429 under
-    concurrency; the backoff is what makes a modest concurrency usable.
+    A failed request is an error, never a result: it returns zero skill reads,
+    which is indistinguishable from correctly reading nothing, so scoring it
+    would turn an outage into a pass on every `avoid` item. Retries exist because
+    the SQL server returns 429 under concurrency.
     """
     payload = json.dumps({"input": [{"role": "user", "content": question}]}).encode()
     last = ""
