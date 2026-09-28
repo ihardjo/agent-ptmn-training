@@ -1,9 +1,15 @@
-"""The chat model, and the streaming-usage bug it works around.
+"""The chat model, and the three endpoint quirks it works around.
 
-`databricks_langchain` 0.20.0 attaches cumulative usage to every streamed chunk,
-so a consumer that sums them reports a multiple of the truth — measured at 29.5x
-on a 405-token run. Remove this once the package emits usage only on the last
-chunk.
+1. `databricks_langchain` 0.20.0 attaches cumulative usage to every streamed
+   chunk, so a consumer that sums them reports a multiple of the truth —
+   measured at 29.5x on a 405-token run.
+2. LangChain tags tool-result blocks with an internal `id` that Anthropic-shaped
+   endpoints reject outright.
+3. `gpt-5-6-sol` defaults to a reasoning effort its own chat endpoint refuses to
+   combine with function tools.
+
+Each is a workaround with a version attached, not a design. Verified against
+glm-5-3-flash, kimi-k3, claude-opus-5, gpt-5-6-sol and grok-4-6.
 """
 
 from __future__ import annotations
@@ -12,7 +18,7 @@ import logging
 from typing import AsyncIterator, Iterator
 
 from databricks_langchain import ChatDatabricks
-from langchain_core.messages import AIMessageChunk
+from langchain_core.messages import AIMessageChunk, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGenerationChunk
 
 logger = logging.getLogger(__name__)
@@ -75,6 +81,47 @@ class UsageCorrectedChatDatabricks(ChatDatabricks):
             yield tail
 
 
+def _strip_block_ids(messages: list[BaseMessage]) -> list[BaseMessage]:
+    """Tool results without LangChain's internal block `id`.
+
+    LangChain tags each content block with `id="lc_<uuid>"`. Anthropic-shaped
+    endpoints validate `tool_result.content` strictly and answer
+    `400 … text.id: Extra inputs are not permitted`, so the run dies on the first
+    tool call. The id is LangChain bookkeeping that nothing downstream reads.
+
+    Copies rather than mutates: the messages belong to graph state, and stripping
+    in place would edit the checkpoint a resumed run reads back.
+    """
+    out: list[BaseMessage] = []
+    for message in messages:
+        if isinstance(message, ToolMessage) and isinstance(message.content, list):
+            blocks = [
+                {k: v for k, v in block.items() if k != "id"} if isinstance(block, dict) else block
+                for block in message.content
+            ]
+            if blocks != message.content:
+                message = message.model_copy(update={"content": blocks})
+        out.append(message)
+    return out
+
+
+class _StripsBlockIds(UsageCorrectedChatDatabricks):
+    """Removes the block ids on the way out, for endpoints that refuse them."""
+
+    def _prepare_inputs(self, messages, *args, **kwargs):  # type: ignore[override]
+        return super()._prepare_inputs(_strip_block_ids(list(messages)), *args, **kwargs)
+
+
+# `gpt-5-6-sol` refuses function tools while a reasoning effort is set, and sets
+# one by default — so the fix is to send `none` explicitly. It is per-model
+# because glm-5-3-flash, claude-opus-5 and grok-4-6 all reject the parameter as
+# an unknown argument; only gpt-5-6-sol needs it and only kimi-k3 tolerates it.
+NEEDS_REASONING_EFFORT_NONE = ("gpt-5-6-sol",)
+
+
 def build_model(endpoint: str) -> ChatDatabricks:
-    """The chat model the agent is built with."""
-    return UsageCorrectedChatDatabricks(endpoint=endpoint)
+    """The chat model the agent is built with, with per-endpoint quirks applied."""
+    extra: dict = {}
+    if any(name in endpoint for name in NEEDS_REASONING_EFFORT_NONE):
+        extra["reasoning_effort"] = "none"
+    return _StripsBlockIds(endpoint=endpoint, extra_params=extra)
