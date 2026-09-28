@@ -43,8 +43,7 @@ def _sse(payload: dict) -> str:
 def error_chunk(message: str) -> str:
     """Report a mid-stream failure, which otherwise just closes the connection.
 
-    One shape for both routes — the UI's provider renders it, and MLflow's own
-    agent server sends the same.
+    One shape for both routes, which the UI's provider and MLflow both render.
     """
     return _sse({"error": message})
 
@@ -62,9 +61,8 @@ def _reasoning_text(block: dict) -> str:
 def _serialized_blocks(content: str) -> list | None:
     """Content blocks that databricks_langchain `json.dumps`-ed into a string, if any.
 
-    Its `_convert_dict_to_message_chunk` stringifies non-string `content`, so a
-    reasoning model's blocks arrive as JSON text. Demanding typed dicts keeps prose
-    that merely opens with a bracket out.
+    It stringifies non-string `content`, so a reasoning model's blocks arrive as
+    JSON text. Demanding typed dicts keeps out prose that opens with a bracket.
     """
     if not content.startswith("["):
         return None
@@ -82,7 +80,7 @@ def _serialized_blocks(content: str) -> list | None:
 def _content_parts(message: AIMessage) -> list[tuple[str, str]]:
     """Split content into (TEXT | REASONING, chunk) pairs.
 
-    Reasoning models interleave thought with answer across a list of blocks;
+    Reasoning models interleave thought with answer across a list of blocks, and
     passing that through whole is what puts a JSON blob on screen.
     """
     content = message.content
@@ -104,9 +102,9 @@ def _content_parts(message: AIMessage) -> list[tuple[str, str]]:
 async def _iter_message_parts(async_stream: AsyncIterator[Any]) -> AsyncGenerator[tuple[str, Any], None]:
     """Yield (kind, payload) for everything the UI can render, in arrival order.
 
-    Both stream modes earn their place: `messages` streams content token by token,
-    while `updates` carries whole messages, and only there do a tool call's
-    arguments arrive as parsed args rather than partial JSON fragments.
+    Both stream modes earn their place: `messages` streams content token by
+    token, and only `updates` carries a tool call's arguments as parsed args
+    rather than partial JSON fragments.
 
     Payload is a str for TEXT/REASONING, a ToolMessage for TOOL_RESULT, and a
     LangChain tool call for TOOL_CALL.
@@ -153,15 +151,13 @@ async def _iter_responses_api_events(
     """Convert LangGraph output to Responses API events, in arrival order.
 
     One event type per renderable thing: thoughts on
-    `response.reasoning_summary_text.delta` (the UI's "Thinking..." block), the
-    answer on `response.output_text.delta`, tool calls and results as
-    `function_call` / `function_call_output` items (the tool cards). Runs also
-    close with an `output_item.done`, de-duplicated by the provider and all
-    `collect_response_output` needs.
+    `response.reasoning_summary_text.delta`, the answer on
+    `response.output_text.delta`, tool cards as `function_call` /
+    `function_call_output` items. Runs close with an `output_item.done`.
 
     No `responses.completed`: it carries token usage but also sets the finish
     reason, and the provider reads a completed response holding tool calls as
-    `tool-calls` — claiming the client owes results for a loop already finished.
+    `tool-calls` — claiming the client owes results for a finished loop.
     """
     run = 0
     open_kind: str | None = None
@@ -264,8 +260,8 @@ async def stream_to_chat_completions_chunks(
 ) -> AsyncGenerator[str, None]:
     """Emit Chat Completions SSE chunks.
 
-    Tool activity is dropped, not mapped: `delta.tool_calls` asks the client to run
-    tools this agent already ran. Callers wanting the steps use /invocations.
+    Tool activity is dropped, not mapped: `delta.tool_calls` asks the client to
+    run tools this agent already ran. Callers wanting the steps use /invocations.
     """
     yield _chat_chunk(completion_id, model, {"role": "assistant", "content": ""})
     async for kind, payload in _iter_message_parts(async_stream):

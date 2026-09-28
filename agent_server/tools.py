@@ -39,8 +39,6 @@ def roll_dice(sides: int = 6) -> int:
     return random.randint(1, sides)
 
 ## TODO 3a: Tool Selection (Manually Defined Tools)
-# The tools defined above. Drop one from this list to take it away from the
-# model; the function itself stays here, unused.
 SELECTED_CUSTOM_TOOLS = [
     # get_current_time,
     # days_until,
@@ -48,17 +46,17 @@ SELECTED_CUSTOM_TOOLS = [
 ]
 
 ## TODO 3b: Tool Selection (Databricks Managed MCP)
-# ["execute_sql", "execute_sql_read_only" "poll_sql_result"]
+# ["execute_sql", "execute_sql_read_only", "poll_sql_result"]
 SELECTED_MCP_TOOLS = [
-    "execute_sql_read_only", 
+    "execute_sql_read_only",
     "poll_sql_result"
 ]
 
 async def agent_tools() -> list[Any]:
     """Every tool the agent is built with, remote ones first.
 
-    An unreachable SQL server returns none of its own rather than raising, so
-    the agent still starts with the locally defined tools — see `mcp_tools`.
+    An unreachable SQL server yields none rather than raising, so the agent
+    still starts with the locally defined tools.
     """
     sql_tools = await mcp_tools(SELECTED_MCP_TOOLS)
 

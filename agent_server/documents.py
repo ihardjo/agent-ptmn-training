@@ -29,10 +29,9 @@ def is_extractable(file_path: str) -> bool:
 def decode(raw: bytes, file_path: str) -> str:
     """The document's text, however this format carries it.
 
-    The single entry point both the read path and the search scan use, so a
-    format understood by one is understood by the other. A tier where `read`
-    succeeds and `grep` silently skips the same file is worse than one that
-    refuses it twice.
+    One entry point for both the read path and the search scan, so a format
+    understood by one is understood by the other. A tier where `read` succeeds
+    and `grep` silently skips the same file is worse than one refusing it twice.
     """
     if is_extractable(file_path):
         return docx_text(raw, file_path)
@@ -47,10 +46,9 @@ def decode(raw: bytes, file_path: str) -> str:
 def docx_text(raw: bytes, file_path: str = "<docx>") -> str:
     """A `.docx` as plain text, with its tables rendered as markdown.
 
-    Blocks are walked in document order rather than paragraphs-then-tables:
-    `python-docx` exposes the two as separate collections, and reading them in
-    turn would move every table to the end, detaching a target table from the
-    heading that says what it targets.
+    Blocks are walked in document order because `python-docx` exposes
+    paragraphs and tables as separate collections, and reading them in turn
+    would move every table to the end, away from the heading it belongs to.
     """
     try:
         from docx import Document
@@ -62,9 +60,8 @@ def docx_text(raw: bytes, file_path: str = "<docx>") -> str:
     try:
         document = Document(io.BytesIO(raw))
     except Exception as exc:
-        # A truncated upload or a mislabelled file arrives here. Raised as our
-        # own error so the caller reports it as a tool result the agent can act
-        # on, rather than as an exception that ends the turn.
+        # A truncated upload or a mislabelled file. Raised as our own error so
+        # the caller reports it as a tool result rather than ending the turn.
         raise UnreadableDocumentError(
             f"File '{file_path}' could not be read as a Word document: {exc}"
         ) from exc
@@ -93,9 +90,8 @@ def _blocks(document) -> Iterator:
 def _table_markdown(table) -> str:
     """A Word table as a markdown table.
 
-    Cells are padded to the header's width and their newlines flattened: a row
-    that is short or that wraps produces a table markdown will not render, and a
-    broken table is harder to read than a plain one.
+    Cells are padded to the header's width and their newlines flattened, since a
+    short or wrapping row produces a table markdown will not render.
     """
     rows = [[_cell(c.text) for c in row.cells] for row in table.rows]
     if not rows:

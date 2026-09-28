@@ -59,9 +59,8 @@ MAX_SCAN_FILES = 500
 def _iso8601(last_modified: Any) -> Optional[str]:
     """The Files API's modification time as the protocol's ISO 8601 string.
 
-    The API sends epoch milliseconds, while `FileInfo.modified_at` is specified
-    as ISO 8601. Passing the integer through unconverted produced a field that
-    looked populated and sorted wrongly everywhere it was compared as text.
+    The API sends epoch milliseconds. Passed through unconverted, the field
+    looked populated and sorted wrongly wherever it was compared as text.
     """
     if last_modified is None:
         return None
@@ -81,10 +80,9 @@ class VolumeEscapeError(ValueError):
 class VolumeBackend(BackendProtocol):
     """Files under one subdirectory of one Unity Catalog Volume.
 
-    Each instance is confined to `<volume_root>/<subdir>`, which is how one
-    Volume carries both human-authored source and agent-written notes while a
-    path prefix still states which is which. `okf_actor`, when set, stamps the
-    frontmatter OKF requires onto markdown written here.
+    Confinement to `<volume_root>/<subdir>` is how one Volume carries both
+    human-authored source and agent-written notes while a path prefix still
+    states which is which. `okf_actor` stamps OKF frontmatter onto markdown.
     """
 
     def __init__(
@@ -111,9 +109,8 @@ class VolumeBackend(BackendProtocol):
     def _resolve(self, path: str) -> str:
         """Map an agent-visible path to a Volume path, refusing escapes.
 
-        `normpath` collapses `..` *before* the prefix check rather than after,
-        so `/a/../../etc` is rejected on what it resolves to and not on how it
-        was spelled.
+        `normpath` collapses `..` before the prefix check, so a path is judged
+        on what it resolves to rather than on how it was spelled.
         """
         candidate = posixpath.normpath(posixpath.join(self._base, path.lstrip("/")))
         if candidate != self._base and not candidate.startswith(f"{self._base}/"):
@@ -138,10 +135,8 @@ class VolumeBackend(BackendProtocol):
             for e in self._client.files.list_directory_contents(target):
                 is_dir = bool(e.is_directory)
                 path = self._to_agent_path(e.path or "")
-                # A directory keeps exactly one trailing slash, which is the
-                # protocol's own convention for marking one. The API already
-                # sends it that way; normalising rather than trusting keeps the
-                # contract true if that ever changes.
+                # One trailing slash marks a directory, per the protocol. The
+                # API sends it that way; normalising keeps that true regardless.
                 path = path.rstrip("/") + "/" if is_dir else path
                 info: FileInfo = {"path": path, "is_dir": is_dir}
                 if e.file_size is not None:
@@ -169,9 +164,8 @@ class VolumeBackend(BackendProtocol):
             return ReadResult(error=str(exc))
         if _get_backend_read_file_type(file_path) != "text":
             return ReadResult(file_data=file_data)
-        # `slice_read_response` clamps the window through `normalize_read_bounds`
-        # and sets every pagination field, including `start_line` — which the
-        # middleware needs to number the gutter correctly.
+        # Clamps the window and sets every pagination field, including the
+        # `start_line` the middleware needs to number the gutter.
         return slice_read_response(file_data, offset, limit)
 
     # ── writes ───────────────────────────────────────────────────────────────
@@ -191,11 +185,10 @@ class VolumeBackend(BackendProtocol):
     def upload_bytes(self, file_path: str, data: bytes) -> str:
         """Write raw bytes, bypassing the text and OKF paths. Returns the Volume path.
 
-        Not reachable by the agent: this is ingest, from the chat upload route.
-        It cannot go through `write`, which would UTF-8 decode a `.docx` ZIP and
-        stamp OKF frontmatter onto an attachment. Escapes raise rather than
-        returning an error result, because the caller owes the user a status
-        code.
+        Ingest from the chat upload route, not reachable by the agent. It cannot
+        go through `write`, which would UTF-8 decode a `.docx` ZIP and stamp OKF
+        frontmatter onto an attachment. Escapes raise rather than returning an
+        error result, because the caller owes the user a status code.
         """
         target = self._resolve(file_path)
         self._client.files.upload(target, io.BytesIO(data), overwrite=True)
@@ -296,9 +289,8 @@ class VolumeBackend(BackendProtocol):
     def _as_okf(self, content: str, file_path: str) -> str:
         """Supply the frontmatter a conformant concept needs, or pass through.
 
-        Reserved filenames are passed through untouched: `index.md` and `log.md`
-        are a listing and a history, and §8/§9 say they carry no frontmatter, so
-        adding some would be the conformance failure rather than the fix.
+        `index.md` and `log.md` are passed through untouched: §8 and §9 say a
+        listing and a history carry none, so adding it would be the violation.
         """
         if not self._okf_actor or not file_path.endswith(".md"):
             return content
@@ -311,7 +303,7 @@ class VolumeBackend(BackendProtocol):
         the shared grep and glob helpers expect.
 
         No ripgrep to delegate to, so search is a recursive list plus a download
-        of each file. Revisit when the tier grows past `MAX_SCAN_FILES`.
+        of each file.
         """
         files: dict[str, Any] = {}
         try:
@@ -328,10 +320,8 @@ class VolumeBackend(BackendProtocol):
                         logger.warning(
                             "Stopped scanning %s at %d files.", self._base, MAX_SCAN_FILES
                         )
-                        # Reported as truncated, not returned as complete. A
-                        # partial scan passed off as whole turns "I stopped
-                        # looking" into "there is nothing there", which is the
-                        # worst answer a search can give.
+                        # Truncated, not complete: a partial scan passed off as
+                        # whole turns "I stopped looking" into "nothing is there".
                         return files, None, True
                     agent_path = self._to_agent_path(e.path)
                     try:
@@ -346,9 +336,8 @@ class VolumeBackend(BackendProtocol):
     def _describe(self, exc: Exception, target: str, operation: str) -> str:
         """A Files API failure as a message the agent can act on.
 
-        Every failure is mapped rather than raised. An unreachable Volume or a
-        missing file has to arrive as a tool result the agent can respond to,
-        not as a 500 from the route — the spec requires the request to continue.
+        Mapped rather than raised: an unreachable Volume or a missing file has
+        to arrive as a tool result, not as a 500 that ends the request.
         """
         logger.info("Volume %s failed for %s: %s", operation, target, exc)
         if "does not exist" in str(exc) or "NOT_FOUND" in str(exc) or "404" in str(exc):
@@ -368,12 +357,11 @@ def wiki_routes(client: Optional[Any] = None, okf_actor: Optional[str] = None) -
     """The two wiki routes, or nothing when the Jakarta credential is absent.
 
     The path derives from `WORKSHOP_GROUP`, so a group branch sets one variable
-    rather than two that can disagree. A UC volume grant is per-volume, not
-    per-path, so read-only on `/wiki/raw/` is enforced by the deny rule in
-    `filesystem_permissions()` and not by the grant.
+    rather than two that can disagree. A UC grant is per-volume, so read-only on
+    `/wiki/raw/` comes from `filesystem_permissions()` and not from the grant.
+
+    The credential is the only gate, since the Volume lives in another workspace.
     """
-    # The credential is the only gate. It has to be: the Volume lives in another
-    # workspace, so no credential means no tier however the path is spelled.
     volume = workshop_volume(workshop_schema())
     if client is None:
         try:
@@ -393,8 +381,6 @@ def wiki_routes(client: Optional[Any] = None, okf_actor: Optional[str] = None) -
         return {}
     return {
         WIKI_SOURCE_MOUNT: VolumeBackend(client, volume, WIKI_SOURCE_SUBDIR),
-        # No write-time identity guard here: durable writes are covered by the
-        # system prompt and by `PIIMiddleware` masking before the model sees.
         WIKI_MOUNT: VolumeBackend(
             client,
             volume,
@@ -408,8 +394,8 @@ def uploads_backend(client: Optional[Any] = None) -> Optional[VolumeBackend]:
     """The backend the chat upload route writes through, or None when unconfigured.
 
     The Volume's `raw/` subdirectory with no `okf_actor`, since stamping OKF
-    frontmatter onto an attachment would turn it into a malformed concept. A
-    separate instance from the agent's, which is behind the write deny.
+    frontmatter onto an attachment would make it a malformed concept. A separate
+    instance from the agent's, which is behind the write deny.
     """
     volume = workshop_volume(workshop_schema())
     if client is None:
@@ -434,10 +420,9 @@ def build_backend(
         /wiki/raw/         read-only landing tree, any format, written by people
         /wiki/             the wiki: an OKF bundle, durable, shared across users
 
-    The default is state, not local disk: a scratch file on a container's
-    filesystem looks durable and is not. Routing is longest-prefix, so
-    `/wiki/raw/…` still reaches the landing tree rather than the bundle — see
-    `test_a_raw_path_still_reaches_the_landing_tree`.
+    The default is state, not local disk, because a scratch file on a
+    container's filesystem looks durable and is not. Routing is longest-prefix,
+    so `/wiki/raw/…` reaches the landing tree rather than the bundle.
     """
     routes: dict[str, Any] = wiki_routes(wiki_client, okf_actor=okf_actor)
     logger.info("Filesystem tiers: / (scratch), %s", ", ".join(sorted(routes)) or "none")
@@ -450,8 +435,7 @@ def filesystem_permissions() -> list[FilesystemPermission]:
     Telling the agent not to edit its own instructions is not a control; a rule
     that refuses the write is. For `/wiki/raw/` this rule is the *only* thing
     enforcing read-only, since the Volume grant covers both subdirectories — a
-    gap here is a correctness bug. `/wiki/` is absent because the agent writes
-    there, and `/wiki/raw/**` must deny a longer prefix than `/wiki/` allows.
+    gap here is a correctness bug.
     """
     return [
         FilesystemPermission(

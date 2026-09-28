@@ -56,7 +56,13 @@ def test_the_report_template_is_reachable(seeded):
     assert path in seeded
     body = seeded[path]["content"]
     body = "".join(body) if isinstance(body, list) else body
-    assert "## 3. Service levels" in body, "the template lost its numbered sections"
+    # On the shape rather than one heading's wording, so that dropping a section
+    # the table cannot fill renumbers the rest without failing here.
+    numbered = re.findall(r"^## (\d+)\. \S", body, re.MULTILINE)
+    assert numbered == [str(i) for i in range(1, len(numbered) + 1)], (
+        f"the template lost its numbered sections, found {numbered}"
+    )
+    assert len(numbered) >= 4
 
 
 def test_an_unselected_skill_contributes_nothing(monkeypatch):

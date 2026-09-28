@@ -1,7 +1,7 @@
 """Open Knowledge Format v0.2 — parsing, conformance, and conformant writes.
 
-OKF is the format the `/wiki/` tier is written in: markdown concepts carrying a
-YAML frontmatter block. Only three things are required (§11) — parseable
+The format the `/wiki/` tier is written in: markdown concepts carrying a YAML
+frontmatter block. Only three things are required (§11) — parseable
 frontmatter, a non-empty `type`, and `index.md`/`log.md` being a listing and a
 history rather than concepts. Everything else is SHOULD, and nothing here
 refuses a document for a soft violation.
@@ -61,9 +61,8 @@ DEFAULT_NOTE_TYPE = "Observation"
 def parse(text: str) -> tuple[Optional[dict[str, Any]], str]:
     """Split a document into its frontmatter mapping and its body.
 
-    Returns `(None, text)` when there is no frontmatter block or the block does
-    not parse as a YAML mapping — the two cases §11 rule 1 and 2 care about,
-    which the caller distinguishes by asking for `conformance_errors`.
+    `(None, text)` when there is no frontmatter block or it does not parse as a
+    YAML mapping — the two cases §11.1 and §11.2 care about.
     """
     match = _FRONTMATTER.match(text)
     if not match:
@@ -157,19 +156,17 @@ def ensure_conformant(
 ) -> str:
     """Return `content` with the frontmatter a conformant concept needs.
 
-    Called on the write path rather than asked for in the prompt: the agent
-    produces this bundle, and an instruction to remember frontmatter holds most
-    of the time rather than all of it. Supplies `type` and `generated`, and
-    leaves everything else the agent wrote alone.
+    Done on the write path rather than asked for in the prompt, because an
+    instruction to remember frontmatter holds most of the time rather than all
+    of it. Supplies `type` and `generated`; everything else is left alone.
     """
     stamp = (now or datetime.now(timezone.utc)).replace(microsecond=0).isoformat().replace(
         "+00:00", "Z"
     )
     frontmatter, body = parse(content)
     if frontmatter is None:
-        # No frontmatter, or frontmatter that did not parse. The body is kept
-        # verbatim; a malformed block is not silently repaired into something
-        # that might mean something different.
+        # Body kept verbatim: a malformed block is not silently repaired into
+        # something that might mean something different.
         frontmatter, body = {}, content
     else:
         frontmatter = dict(frontmatter)

@@ -1,85 +1,57 @@
 ---
 name: report-from-template
-description: Produces a sprint report by populating an approved document template with the findings of a prior analysis step, preserving the template's layout, styles, headers, and numbering. Use when asked to fill in, populate, or generate a report from a template, a form, or an approved document format.
+description: Produces a sprint report in the reply, laid out to the approved sprint report template — its sections, in its order, with its headings and numbering. Use when asked for a sprint report, a status report, or findings in the standard reporting format.
 ---
 
-# Reporting from a template
+# Reporting to the standard template
 
-The findings can be produced. The **document** cannot. This skill exists to
-draw that line precisely, because the two are easy to conflate and only one of
-them is deliverable.
+The report is the reply. Nothing is attached and no file is produced — the
+deliverable is the content itself, written out in the chat, in the layout the
+approved template fixes.
 
-## What "preserving the template" actually requires
-
-An approved template carries its meaning in things that are not text: paragraph
-and character styles, numbering sequences that continue across sections,
-headers and footers, table borders, fonts, and the relationships between them.
-Populating one means opening that file, writing values into the right places,
-and saving it with every one of those intact.
-
-This agent cannot do that, and the reason is structural rather than a missing
-setting:
-
-- A `.docx` is a ZIP of XML. It is **read** here by extracting text — paragraphs
-  in document order, tables rendered as markdown. Styling, images, headers and
-  footers are dropped on the way in. What is recovered is the words, not the
-  document.
-- Writing goes the other way and is worse. The write path takes a string and
-  stores it as UTF-8. A string written to a path ending in `.docx` is not a Word
-  file with different styling; it is a file that Word cannot open at all.
-
-So "populate the template and preserve its layout" has no honest partial
-version. Producing a file that *looks* delivered and cannot be opened is the
-worst outcome available, and it is the one that follows from trying.
-
-## The layout to produce against
+## The layout
 
 [`references/sprint-report-template.md`](references/sprint-report-template.md)
-is the approved layout transcribed — section order, numbering and heading
-wording, with `«angle-quoted»` placeholders for what has to be filled in. Read
-it before writing anything, and follow it exactly.
+is that layout: section order, numbering and heading wording, with
+`«angle-quoted»` placeholders marking what has to be filled in. Read it before
+writing anything and follow it exactly. It is the approved document transcribed,
+so when the signed version changes this file is what has to be re-transcribed —
+it is a copy, and copies drift.
 
-It is markdown rather than the signed `.docx` for the reason given above: what
-this agent can read out of a Word file is the words, and what it can write is
-text. Transcribing the structure once, into a file that survives both, is what
-makes the layout usable at all. When the signed template changes, this file is
-what has to be re-transcribed — it is a copy, and copies drift.
+Reproduce every heading, in the template's order, with its wording and numbering
+unchanged. The headings are what make one sprint's report comparable to the
+last one's, and a renamed or reordered section breaks that comparison silently.
 
-## What to do instead
+Where the data does not hold what a section asks for, keep the heading and say
+so beneath it. A named gap is an answer; a dropped section reads as an
+oversight, and the reader cannot tell the two apart.
 
-Say plainly that the approved document cannot be filled in and returned, and
-name the reason: the template's styles and numbering cannot survive this agent's
-write path.
-
-Then produce **the content**, in markdown, section by section in the template's
-own order, with its headings quoted exactly as the template words them. A person
-pastes that into the approved file, where the styles are already defined and
-apply themselves. That is a smaller claim than the request, and it is one that
-can be met completely.
-
-Where the template names a figure, give the figure and say what it was computed
-from. Where the template asks for something the data does not hold, leave the
-heading in place and say the data does not hold it, rather than dropping the
-section — a missing heading reads as an oversight, a named gap reads as an
-answer.
+Replace every placeholder. An `«angle-quoted»` string surviving into the reply
+is a hole, not a value.
 
 ## Getting the figures
 
-This skill does not compute anything. A sprint report's numbers come from the
-analysis skills, and they carry the caveats that make each figure honest:
-adherence and breach counts from `computing-target-adherence`, the effort split
-from `splitting-planned-unplanned-work`, velocity from
-`measuring-sprint-velocity`, cause distribution from `summarising-root-causes`.
+This skill computes nothing. Every section is answerable from the ticket table,
+and the numbers come from the analysis skills, which carry the caveats that make
+each figure honest: the effort split from `splitting-planned-unplanned-work`,
+velocity from `measuring-sprint-velocity`, cause distribution from
+`summarising-root-causes`, and the caveats themselves from
+`auditing-data-quality`.
 
-Run the analysis first and report its results, including its caveats. A report
-that presents a figure without the qualification the analysis attached to it has
-laundered the uncertainty out of it, which is the failure a template makes
-easiest — the heading asks for a number and the layout leaves no room to say
-what it rests on. Make room.
+Run the analysis first, then report its result together with its caveat. A
+figure given without the qualification the analysis attached to it has had the
+uncertainty laundered out of it — the failure a template makes easiest, because
+a heading asks for a number and the layout leaves nowhere to say what it rests
+on. Section 5 is that room; use it, and keep the short form next to the figure
+rather than only in the appendix.
+
+Nothing in the layout asks for a resolution target, an escalation route, or a
+risk owner. The table holds none of those, so a section needing one would have
+no honest filling — if a request wants them, say the ticket data does not carry
+them rather than reaching for a proxy.
 
 ## The rules a formatting request does not relax
 
-Presentation is not an exception. Staff are reported in aggregate, never by
-name or address, however the template's columns are labelled. No figure is
-invented to fill a cell. If the template has a field the analysis did not
-produce, it stays empty and labelled as such.
+Presentation is not an exception. Staff are reported in aggregate and by rank,
+never by name or address, however the template's columns are labelled. No figure
+is invented to fill a cell.
