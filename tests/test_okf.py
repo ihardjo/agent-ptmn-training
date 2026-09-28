@@ -21,7 +21,12 @@ from agent_server.okf import (
     parse,
 )
 
-SEED = pathlib.Path(__file__).resolve().parent.parent / "wiki_seed" / "wiki"
+# A conformant bundle to mutate, kept here rather than read from
+# `wiki_seed/`. The seed is now a single scaffolding index — the Volumes it
+# populates are greenfield — and a one-file corpus cannot exercise a log,
+# a nested index, or a concept's provenance. This is the bundle the seed
+# used to carry, frozen as a fixture so the rule coverage outlived it.
+SEED = pathlib.Path(__file__).resolve().parent / "fixtures" / "okf_bundle"
 ACTOR = "agent-ptmn-training/test-model"
 FIXED = datetime(2026, 9, 18, 7, 30, 0, tzinfo=timezone.utc)
 
