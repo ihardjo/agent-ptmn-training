@@ -3,6 +3,7 @@ from typing import Any, AsyncGenerator
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from langfuse import Langfuse
 from langfuse.langchain import CallbackHandler
 
 from agent_server.agent import init_agent
@@ -43,6 +44,67 @@ def trace_name() -> str:
     return f"agent-workshop-ai-{group()}"
 
 
+# A LangGraph state, as opposed to a node returning only `{"messages": [...]}`.
+# One of these keys is what makes the payload enormous.
+STATE_KEYS = ("files", "todos", "skills_metadata")
+
+_MASK_INSTALLED = False
+
+
+def message_text(message: Any) -> str:
+    """A message's text, whether it arrives as a LangChain object or a dict."""
+    content = getattr(message, "content", None)
+    if content is None and isinstance(message, dict):
+        content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+    return ""
+
+
+def trim_graph_state(*, data: Any) -> Any:
+    """Langfuse's mask: a graph state becomes its last message's text.
+
+    LangGraph's root chain reports the whole state — every message plus every
+    seeded skill file — and Langfuse promotes that observation's input and
+    output to the trace's, so the list shows a JSON blob where the question and
+    the answer belong. Masking is the lever that works: trace-level input and
+    output set directly are overwritten by the root chain's on ingest.
+
+    Last message either way, which is the question on the way in and the final
+    answer on the way out. Untouched when nothing carries text, because an empty
+    string would read as an answer the model did not give.
+    """
+    if not (
+        isinstance(data, dict)
+        and isinstance(data.get("messages"), list)
+        and any(key in data for key in STATE_KEYS)
+    ):
+        return data
+    for message in reversed(data["messages"]):
+        if text := message_text(message).strip():
+            return text
+    return data
+
+
+def install_mask() -> None:
+    """Bind the mask to the Langfuse client, once and before the first handler.
+
+    The mask lives on the client, and the client is a singleton keyed on the
+    public key that keeps whatever it was built with — so a `CallbackHandler()`
+    constructed first would create an unmasked client for the whole process.
+    """
+    global _MASK_INSTALLED
+    if not _MASK_INSTALLED:
+        _MASK_INSTALLED = True
+        Langfuse(mask=trim_graph_state)
+
+
 def trace_config(session_id: str | None = None) -> dict:
     """Langfuse callbacks for one run, or an empty config when no host is set.
 
@@ -54,6 +116,7 @@ def trace_config(session_id: str | None = None) -> dict:
     if not host:
         logger.info("No LANGFUSE_HOST — this run will not be traced.")
         return {}
+    install_mask()
     config: dict = {"callbacks": [CallbackHandler()], "run_name": trace_name()}
     if session_id:
         config["metadata"] = {"langfuse_session_id": session_id}

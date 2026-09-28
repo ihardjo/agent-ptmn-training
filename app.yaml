@@ -22,8 +22,5 @@ env:
     valueFrom: "databricks-jakarta-id"
   - name: DATABRICKS_JAKARTA_CLIENT_SECRET
     valueFrom: "databricks-jakarta-secret"
-  # Volume-backed wiki — OKF bundle on a Unity Catalog Volume in Jakarta
-  # app.yaml is the UI/Git deploy path and has no bundle variable, so the
-  # group is named here. `databricks.yml` derives it from `--var=group=...`.
   - name: WORKSHOP_GROUP
     value: "group-0"
