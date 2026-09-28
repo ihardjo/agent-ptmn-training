@@ -13,7 +13,7 @@ def conversation_turns(items: list[dict]) -> list["ChatMessage"]:
     """The conversation turns out of a Responses API `input` list.
 
     Clients replay the items we emitted — `reasoning`, `function_call`,
-    `function_call_output`, `mcp_approval_*` — and none of those carry a `role`.
+    `function_call_output` — and none of those carry a `role`.
     LangGraph rebuilds its state from the turns alone, so they are skipped rather
     than failing validation.
     """
