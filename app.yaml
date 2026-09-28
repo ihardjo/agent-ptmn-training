@@ -29,4 +29,4 @@ env:
   # app.yaml is the UI/Git deploy path and has no bundle variable, so the
   # group is named here. `databricks.yml` derives it from `--var=group=...`.
   - name: WORKSHOP_SCHEMA
-    value: "default"
+    value: "group_0"
