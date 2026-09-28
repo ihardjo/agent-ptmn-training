@@ -1,8 +1,7 @@
 """The skill menu the model is offered, and how it reaches the model.
 
-The repository's `skills/` tree is the catalogue; `SELECTED_SKILLS` is the
-configuration. They are separate so that adding a skill to the repository does
-not silently put it in front of the model.
+`skills/` is the catalogue and `SELECTED_SKILLS` is the configuration, so adding
+a skill to the repository does not silently put it in front of the model.
 """
 
 import logging
@@ -10,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from deepagents.backends.utils import create_file_data
+
+from agent_server.env import resolve
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = REPO_ROOT / "skills"
@@ -37,20 +38,10 @@ SELECTED_SKILLS = (
 def skill_files() -> dict[str, Any]:
     """Every file of every selected skill, keyed by its agent-visible path.
 
-    **The whole bundle, not just `SKILL.md`.** A skill may carry reference
-    files — `report-from-template` ships the approved report layout — and
-    `check-skills` validates that those links resolve. Seeding only `SKILL.md`
-    made that validation a lie at runtime: the link passed conformance, and the
-    path it pointed at did not exist in the filesystem the model reads, so the
-    skill told the model to open a file that was not there.
-
-    Only `name` and `description` reach the prompt regardless; a reference costs
-    nothing until the model chooses to read it.
-
-    Undecodable files are skipped rather than raising. The authoring standard
-    forbids scripts and the references are markdown, so this should never fire —
-    but a binary dropped into a skill directory should cost that one file, not
-    the ability to start.
+    The whole bundle, not just `SKILL.md`: a skill may carry reference files,
+    and seeding only `SKILL.md` made `check-skills`'s reference validation a lie
+    at runtime. Undecodable files are skipped, so a binary in a skill directory
+    costs that file rather than the startup.
     """
     files: dict[str, Any] = {}
     for name in SELECTED_SKILLS:
@@ -59,7 +50,9 @@ def skill_files() -> dict[str, Any]:
             if not path.is_file():
                 continue
             try:
-                content = path.read_text()
+                # Same substitution as the system prompt: a skill's SQL names
+                # the table, and which schema that is differs per group.
+                content = resolve(path.read_text())
             except (UnicodeDecodeError, OSError):
                 logger.warning("skill %s: skipped unreadable file %s", name, path.name)
                 continue

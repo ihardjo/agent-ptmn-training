@@ -35,16 +35,9 @@ DEFAULT_TRACE_NAME = "LangGraph"
 def trace_config(session_id: str | None = None) -> dict:
     """Langfuse callbacks for one run, or an empty config when no host is set.
 
-    The host has to be the gate, and it has to be read here: `CallbackHandler`
-    takes no host argument, and an unset host resolves to cloud.langfuse.com
-    inside the SDK — so keys left in place with the host dropped would ship
-    prompts and tool output to a third-party SaaS instead of failing. Missing keys
-    need no branch; the SDK disables itself. LANGFUSE_BASE_URL wins, as in the SDK.
-
-    `run_name` is LangChain's, not Langfuse's: the handler takes the root run's
-    name as the trace name, so there is no Langfuse-side setting for this and
-    naming the run is how it is done. Verified against a live trace rather than
-    assumed — see `test_the_trace_name_is_passed_as_the_run_name`.
+    The host is the gate: an unset host resolves to cloud.langfuse.com inside the
+    SDK, so keys left in place would ship prompts off-premises instead of
+    failing. `run_name` is LangChain's — the handler reads it as the trace name.
     """
     host = env("LANGFUSE_BASE_URL") or env("LANGFUSE_HOST")
     if not host:
@@ -60,9 +53,8 @@ def trace_config(session_id: str | None = None) -> dict:
 def agent_stream(agent: Any, messages: list, session_id: str | None):
     """The agent's event stream for one request.
 
-    `files=` seeds the skills tier into this turn's state: `StateBackend`
-    holds only graph state, so this is how the model sees skill content it
-    never wrote (see `skill_files()` in `agent.py`).
+    `files=` seeds the skills tier into this turn's state, which is how the
+    model sees skill content it never wrote.
     """
     return agent.astream(
         input={
@@ -75,10 +67,8 @@ def agent_stream(agent: Any, messages: list, session_id: str | None):
 
 
 def sse_response(chunks: AsyncGenerator[str, None]) -> StreamingResponse:
-    """Serve SSE, reporting a mid-stream failure in the stream itself.
-
-    Once the response has started the status code is spent, so an error event is
-    the only way left to tell the caller.
+    """Serve SSE, reporting a mid-stream failure in the stream itself, because
+    once the response has started the status code is spent.
     """
     async def guarded():
         try:
@@ -127,10 +117,8 @@ async def chat_completions(request: ChatRequest, http_request: Request):
 
 @router.post("/invocations")
 async def invocations_compat(body: dict, http_request: Request):
-    """Handle requests from the React chat UI, which speaks the OpenAI Responses API.
-
-    The Databricks ai-sdk-provider responses() client sends `input` as a list of
-    messages and expects Responses SSE events back.
+    """Handle requests from the React chat UI, which speaks the OpenAI Responses
+    API: `input` as a list of messages, Responses SSE events back.
     """
     session_id = http_request.headers.get("X-Session-Id") or body.get("context", {}).get("conversation_id")
     agent = await init_agent()
@@ -151,18 +139,9 @@ async def upload_file(
     """Take one file from the chat and write it to the wiki Volume.
 
     The chat UI's paperclip calls `POST /api/files/upload` on the Node app,
-    which forwards the multipart body here untouched (see `frontend_overlay/`).
-    Nothing is parsed twice: this is the only place that holds an opinion about
-    what a valid upload is.
-
-    The response shape is the chat template's, not ours: its client
-    destructures `{url, pathname, contentType}` and shows `pathname` on the
-    attachment chip. `url` is the agent-visible path and is informational —
-    nothing fetches it, because the bytes are already where the agent reads.
-
-    A refusal returns 400 with the reason under `error`, which is the field the
-    template's client passes straight to a toast. The user sees the sentence,
-    not a status code.
+    which forwards the multipart body here untouched. The response shape is the
+    chat template's — its client shows `pathname` on the chip and puts `error`
+    straight into a toast, so a refusal returns 400 with a sentence in it.
     """
     from agent_server.backends import uploads_backend
     from agent_server.uploads import (
@@ -187,8 +166,8 @@ async def upload_file(
         raise HTTPException(
             status_code=503,
             detail={
-                "error": "Attachments need the wiki Volume, and this server has none "
-                "configured. Set DATABRICKS_WIKI_VOLUME."
+                "error": "Attachments need the wiki Volume, which this server "
+                "cannot reach. Set DATABRICKS_JAKARTA_*."
             },
         )
 

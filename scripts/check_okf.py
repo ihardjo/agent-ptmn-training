@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """Check the wiki bundle against OKF v0.2 conformance (§11).
 
-Two things are worth checking and they are not the same. The committed seed is
-checked on every test run; the **Volume** is not, and it is the one that drifts
-— because the agent writes to it. A note that lands without frontmatter breaks
-the bundle for every later reader, so this is the command that says so.
+The committed seed is checked on every test run; the Volume is not, and it is
+the one that drifts because the agent writes to it.
 
-    uv run check-okf              # the committed seed and, if configured, the Volume
+    uv run check-okf              # the seed and, if configured, the Volume
     uv run check-okf --seed-only  # no workspace needed
 
 Exits non-zero when any document violates one of the three hard rules.
@@ -20,6 +18,9 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+from agent_server.env import schema as workshop_schema
+from agent_server.env import volume as workshop_volume
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=REPO_ROOT / ".env", override=True)
@@ -60,9 +61,7 @@ def volume_documents() -> dict[str, dict[str, str]] | None:
     # otherwise report both tiers empty rather than saying it could not look.
     from agent_server.clients import jakarta_workspace_client
 
-    volume = os.environ.get("DATABRICKS_WIKI_VOLUME")
-    if not volume:
-        return None
+    volume = workshop_volume(workshop_schema())
 
     w = jakarta_workspace_client()
     if w is None:
@@ -120,11 +119,10 @@ def main() -> None:
         bundles = volume_documents()
         if bundles is None:
             print(
-                "\nVolume: not configured — set DATABRICKS_WIKI_VOLUME and "
-                "DATABRICKS_JAKARTA_* to check it."
+                "\nVolume: not reachable — set DATABRICKS_JAKARTA_* to check it."
             )
         else:
-            volume = os.environ["DATABRICKS_WIKI_VOLUME"].rstrip("/")
+            volume = workshop_volume(workshop_schema()).rstrip("/")
             for subdir, documents in bundles.items():
                 if not documents:
                     print(f"\n{volume}/{subdir}: empty")

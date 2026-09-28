@@ -1,28 +1,7 @@
-"""Create and load `workshop_ai_platform.default.sdlc_tickets` in Jakarta.
+"""Create and load the `sdlc_tickets` table in Jakarta.
 
-Committed alongside the generator so the table is reproducible end to end:
-same seed in, same rows out, same magnitudes verifiable.
-
-Two things about the execution path are worth knowing before changing this:
-
-- **The identity matters.** DDL here needs table ownership, which the agent's
-  service principal deliberately does not hold. Run it under a profile whose
-  user owns the schema's tables (`brd-qa-idn`), not under the app's
-  credentials.
-- **A failed statement is not an API error.** The statement API reports
-  transport success while carrying the failure inside the payload, so every
-  call checks `status.state` rather than trusting the absence of an exception.
-  This is the same trap the agent itself has to handle.
-
-Rows are loaded as batched multi-row INSERTs, which needs no Volume and no
-cluster — only a SQL warehouse.
-
-Usage:
-    # first time, table does not exist
-    uv run python -m scripts.load_sdlc_tickets --create --load --verify
-
-    # regenerate an existing table in place (the destructive one)
-    uv run python -m scripts.load_sdlc_tickets --replace --load --verify
+The schema comes from `WORKSHOP_SCHEMA` (default `default`), so the same command
+loads whichever group this checkout is pointed at. `--table` overrides it.
 """
 
 from __future__ import annotations
@@ -31,6 +10,8 @@ import argparse
 import pathlib
 
 from databricks.sdk import WorkspaceClient
+
+from agent_server.env import table as workshop_table
 
 from scripts.generate_sdlc_tickets import (
     ROWS,
@@ -42,7 +23,7 @@ from scripts.generate_sdlc_tickets import (
 
 DEFAULT_PROFILE = "brd-qa-idn"
 DEFAULT_WAREHOUSE = "504121548fc7388f"
-DEFAULT_TABLE = "workshop_ai_platform.default.sdlc_tickets"
+DEFAULT_TABLE = workshop_table()
 VERIFY_SQL = pathlib.Path(__file__).parent / "sdlc_tickets_verify.sql"
 
 TABLE_COMMENT = (

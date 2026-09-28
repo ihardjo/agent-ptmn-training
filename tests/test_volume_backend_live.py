@@ -1,10 +1,8 @@
 """The VolumeBackend against the real Volume.
 
-The fake in `conftest.py` encodes assumptions about the Files API — what a
-missing file raises, what a directory entry carries — and a fake that has
-drifted from the API tests nothing. These run only when the Jakarta credentials
-and the Volume path are configured, which is also the condition under which the
-tier exists at all.
+The fake in `conftest.py` encodes assumptions about the Files API, and a fake
+that has drifted tests nothing. These run only when the Jakarta credentials and
+the Volume path are configured.
 
     uv run pytest tests/test_volume_backend_live.py -q
 """
@@ -12,6 +10,13 @@ tier exists at all.
 from __future__ import annotations
 
 import os
+
+from agent_server.env import schema as _schema
+from agent_server.env import volume as _workshop_volume
+
+
+def _volume() -> str:
+    return _workshop_volume(_schema())
 import uuid
 from pathlib import Path
 
@@ -28,14 +33,14 @@ SERVICE_PRINCIPAL = (
     "DATABRICKS_JAKARTA_CLIENT_SECRET",
 )
 
-_configured = os.environ.get("DATABRICKS_WIKI_VOLUME") and (
+_configured = (
     os.environ.get("DATABRICKS_JAKARTA_PROFILE")
     or all(os.environ.get(k) for k in SERVICE_PRINCIPAL)
 )
 
 pytestmark = pytest.mark.skipif(
     not _configured,
-    reason="Jakarta credentials or DATABRICKS_WIKI_VOLUME not configured",
+    reason="Jakarta credentials not configured",
 )
 
 
@@ -50,20 +55,20 @@ def live_client():
 @pytest.fixture(scope="module")
 def live_raw(live_client):
     """The landing tree: what people dropped, in whatever format."""
-    return VolumeBackend(live_client, os.environ["DATABRICKS_WIKI_VOLUME"], "raw")
+    return VolumeBackend(live_client, _volume(), "raw")
 
 
 @pytest.fixture(scope="module")
 def live_wiki(live_client):
     """The wiki itself — the OKF bundle the seed populates."""
-    return VolumeBackend(live_client, os.environ["DATABRICKS_WIKI_VOLUME"], "wiki")
+    return VolumeBackend(live_client, _volume(), "wiki")
 
 
 @pytest.fixture
 def live_notes(live_client):
     return VolumeBackend(
         live_client,
-        os.environ["DATABRICKS_WIKI_VOLUME"],
+        _volume(),
         "wiki",
     )
 

@@ -1,25 +1,7 @@
-"""Deterministic generator for `workshop_ai_platform.default.sdlc_tickets`.
+"""Deterministic generator for the `sdlc_tickets` table.
 
-The workshop's training table is not sample data. Its interesting properties are
-designed and recorded, because downstream evaluation derives ground truth from
-them — so "what is true in this table" has to be a contract, not an accident of
-whatever the random number generator produced.
-
-Two consequences shape this file:
-
-- **Determinism.** One seeded `random.Random`, never the module-level functions,
-  and a committed name list rather than a locale library whose output drifts
-  between releases. The same seed must reproduce the same 4,000 rows forever.
-- **Hand-specified distributions.** Sampling freely washes out every planted
-  finding. The constants below are tuned so F1-F7 land at the magnitudes in
-  design Decision 7; `--verify` prints what was actually achieved.
-
-Findings (F*) and defects (D*) refer to design Decisions 7 and 8 of the
-`replace-ticket-table-with-sdlc-schema` change.
-
-Usage:
-    uv run python scripts/generate_sdlc_tickets.py --verify
-    uv run python scripts/generate_sdlc_tickets.py --out rows.jsonl
+The target schema comes from `WORKSHOP_SCHEMA`; the data is identical for every
+group, since the seed is pinned.
 """
 
 from __future__ import annotations
@@ -29,6 +11,8 @@ import json
 import random
 import statistics
 from datetime import date, datetime, timedelta
+
+from agent_server.env import table as workshop_table
 
 SEED = 20260917
 ROWS = 4000
@@ -591,7 +575,7 @@ def main() -> None:
     ap.add_argument("--out", help="write rows as JSONL")
     ap.add_argument("--print-ddl", action="store_true")
     ap.add_argument("--table",
-                    default="workshop_ai_platform.default.sdlc_tickets")
+                    default=workshop_table())
     args = ap.parse_args()
 
     if args.print_ddl:
