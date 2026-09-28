@@ -27,7 +27,7 @@ from agent_server.okf import (
 # a nested index, or a concept's provenance. This is the bundle the seed
 # used to carry, frozen as a fixture so the rule coverage outlived it.
 SEED = pathlib.Path(__file__).resolve().parent / "fixtures" / "okf_bundle"
-ACTOR = "agent-ptmn-training/test-model"
+ACTOR = "agent-under-test"
 FIXED = datetime(2026, 9, 18, 7, 30, 0, tzinfo=timezone.utc)
 
 
@@ -201,11 +201,17 @@ def test_a_malformed_block_is_kept_verbatim_in_the_body():
     assert "unclosed" in body
 
 
-def test_the_actor_follows_the_okf_convention():
+def test_the_actor_is_distinguishable_from_a_human_one():
+    """The one thing `generated.by` has to do: separate what the agent wrote from
+    authored policy, which is what the prompt's source-precedence rule reads.
+
+    §7 suggests `<producer>/<version>`, but that is a SHOULD and the version was
+    a second thing to keep true that nothing read. What must hold is that the
+    actor is non-empty and never claims to be a person.
+    """
     from agent_server.agent import OKF_ACTOR
 
-    producer, _, version = OKF_ACTOR.partition("/")
-    assert producer and version, "§7 wants `<producer>/<version>` for an agent"
+    assert OKF_ACTOR
     assert not OKF_ACTOR.startswith("human:"), "an agent must not claim a human actor"
 
 

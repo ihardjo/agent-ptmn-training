@@ -399,8 +399,6 @@ def wiki_routes(client: Optional[Any] = None, okf_actor: Optional[str] = None) -
             client,
             volume,
             WIKI_SUBDIR,
-            # The write path supplies OKF frontmatter, so conformance is a
-            # property of the tier rather than of good behaviour.
             okf_actor=okf_actor,
         ),
     }
