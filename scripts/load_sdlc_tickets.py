@@ -1,6 +1,6 @@
 """Create and load the `sdlc_tickets` table in Jakarta.
 
-The schema comes from `WORKSHOP_SCHEMA` (default `default`), so the same command
+The schema comes from `WORKSHOP_GROUP` (default `default`), so the same command
 loads whichever group this checkout is pointed at. `--table` overrides it.
 """
 

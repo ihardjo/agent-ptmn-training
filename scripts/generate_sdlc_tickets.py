@@ -1,6 +1,6 @@
 """Deterministic generator for the `sdlc_tickets` table.
 
-The target schema comes from `WORKSHOP_SCHEMA`; the data is identical for every
+The target schema comes from `WORKSHOP_GROUP`; the data is identical for every
 group, since the seed is pinned.
 """
 

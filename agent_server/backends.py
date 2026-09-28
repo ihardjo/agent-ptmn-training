@@ -367,7 +367,7 @@ WIKI_SUBDIR = "wiki"
 def wiki_routes(client: Optional[Any] = None, okf_actor: Optional[str] = None) -> dict[str, Any]:
     """The two wiki routes, or nothing when the Jakarta credential is absent.
 
-    The path derives from `WORKSHOP_SCHEMA`, so a group branch sets one variable
+    The path derives from `WORKSHOP_GROUP`, so a group branch sets one variable
     rather than two that can disagree. A UC volume grant is per-volume, not
     per-path, so read-only on `/wiki/raw/` is enforced by the deny rule in
     `filesystem_permissions()` and not by the grant.

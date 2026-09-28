@@ -9,7 +9,7 @@ from langgraph.types import Command
 
 from agent_server.agent import init_agent
 from agent_server.approvals import decisions_from
-from agent_server.env import env, schema
+from agent_server.env import env, group
 from agent_server.skills import skill_files
 from agent_server.models import (
     AssistantMessage,
@@ -38,11 +38,12 @@ def trace_name() -> str:
     Derived rather than configured. Every trace arrived as `LangGraph` — the
     compiled graph's own name, identical for every LangGraph agent — so eight
     group instances tracing to one project were indistinguishable in the list.
-    Deriving it from the schema means a wrong `WORKSHOP_SCHEMA` mislabels the
-    traces as well as pointing at the wrong data, which is the failure being
-    visible rather than silently correct-looking.
+
+    From `group()` rather than `schema()`, so the trace name is exactly the app
+    name: a trace in the list can be matched to the app that produced it without
+    translating a hyphen into an underscore.
     """
-    return f"agent-workshop-ai-{schema()}"
+    return f"agent-workshop-ai-{group()}"
 
 
 def trace_config(session_id: str | None = None) -> dict:
