@@ -10,9 +10,11 @@ from typing import Any
 
 from langchain.agents.middleware import (
     PIIMiddleware,
+    SummarizationMiddleware,
     TodoListMiddleware,
     ToolRetryMiddleware,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,39 @@ def _is_rate_limited(exc: BaseException, depth: int = 0) -> bool:
     return False
 
 
-def build_middlewares(flag_pii: bool, flag_tool_retries: bool) -> list[Any]:
+# Measured against every model this workshop may be pointed at:
+# glm-5-3-flash, kimi-k3, claude-opus-5, gpt-5-6-sol and grok-4-6. Each was sent
+# a ~200,000-token prompt with a marker at the front and asked to repeat it;
+# all five recalled it, so none is silently dropping the head of the
+# conversation at this size.
+#
+# The trigger counts with `count_tokens_approximately`, which sees neither the
+# system prompt (~3,100 tokens) nor the skill files the filesystem middleware
+# injects (~2,600) — fixed overhead, so real input is this number plus roughly
+# six thousand.
+#
+# One analytical turn is ~8,500 counted tokens, so this is a **safety net rather
+# than a working compactor**: about twenty turns pass before it fires. That is
+# the intent — summarising discards tool results the next answer may need, and
+# these models hold the context comfortably. Lower it toward 20,000 if the cost
+# of resending a long history matters more than keeping it.
+#
+# A `("fraction", …)` trigger would follow the model instead of being pinned,
+# but it raises `ValueError` without a model profile and these endpoints ship
+# none.
+SUMMARY_TRIGGER_TOKENS = 200_000
+SUMMARY_KEEP_MESSAGES = 12
+
+
+def build_middlewares(
+    flag_pii: bool,
+    flag_tool_retries: bool,
+    flag_summarize: bool = True,
+) -> list[Any]:
+    """The middleware stack for one agent."""
+    from agent_server.agent import MODEL_ENDPOINT
+    from agent_server.model import build_model
+
     middlewares: list[Any] = [TodoListMiddleware()]
     if flag_pii:
         middlewares.append(
@@ -51,6 +85,14 @@ def build_middlewares(flag_pii: bool, flag_tool_retries: bool) -> list[Any]:
                 apply_to_input=True,
                 apply_to_output=True,
                 apply_to_tool_results=True,
+            )
+        )
+    if flag_summarize:
+        middlewares.append(
+            SummarizationMiddleware(
+                model=build_model(MODEL_ENDPOINT),
+                trigger=("tokens", SUMMARY_TRIGGER_TOKENS),
+                keep=("messages", SUMMARY_KEEP_MESSAGES),
             )
         )
     if flag_tool_retries:

@@ -13,6 +13,7 @@ import re
 
 from langchain.agents.middleware import PIIMiddleware, TodoListMiddleware
 from langchain.agents.middleware._redaction import detect_email
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain.messages import AIMessage, HumanMessage, ToolMessage
 
 import agent_server.agent as agent_mod
@@ -53,7 +54,12 @@ def _middleware(monkeypatch, **kwargs) -> list:
         return []
 
     monkeypatch.setattr(agent_mod, "create_deep_agent", fake_create)
-    monkeypatch.setattr(agent_mod, "build_model", lambda *a, **kw: object())
+    # A real chat model, not a bare object: the same instance is handed to
+    # `SummarizationMiddleware`, which calls `with_retry()` on it.
+    monkeypatch.setattr(
+        agent_mod, "build_model",
+        lambda *a, **kw: GenericFakeChatModel(messages=iter([AIMessage(content="ok")])),
+    )
     monkeypatch.setattr(agent_mod, "build_backend", lambda *a, **kw: object())
     monkeypatch.setattr(agent_mod, "agent_tools", no_tools)
     asyncio.run(agent_mod.init_agent(**kwargs))
