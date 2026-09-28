@@ -8,6 +8,8 @@ import logging
 from pathlib import Path
 
 from deepagents import create_deep_agent
+from langchain.agents.middleware import InterruptOnConfig
+from langgraph.checkpoint.memory import InMemorySaver
 
 from agent_server.backends import build_backend, filesystem_permissions
 from agent_server.middleware import build_middlewares
@@ -24,11 +26,14 @@ PROMPTS_DIR = Path(__file__).parent / "prompts"
 MODEL_ENDPOINT = "databricks-glm-5-3-flash"
 
 ## TODO 2: System Prompt — edit `prompts/system_prompt.md`.
-# `resolve` substitutes `{{TABLE}}`: the prompt names the table in SQL the
-# model copies, and markdown cannot read an environment variable.
 SYSTEM_PROMPT = resolve((PROMPTS_DIR / "system_prompt.md").read_text())
 
-OKF_ACTOR = f"agent-ptmn-training/{MODEL_ENDPOINT}"
+OKF_ACTOR = "agent"
+
+CHECKPOINTER = InMemorySaver()
+INTERRUPT_ON = {
+    "execute_sql_read_only": InterruptOnConfig(allowed_decisions=["approve", "reject"]),
+}
 
 async def init_agent(flag_pii: bool = True, flag_tool_retries: bool = True):
     return create_deep_agent(
@@ -39,4 +44,6 @@ async def init_agent(flag_pii: bool = True, flag_tool_retries: bool = True):
         backend=build_backend(okf_actor=OKF_ACTOR),
         permissions=filesystem_permissions(),
         middleware=build_middlewares(flag_pii, flag_tool_retries),
+        interrupt_on=INTERRUPT_ON,
+        checkpointer=CHECKPOINTER,
     )
