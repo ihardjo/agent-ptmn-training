@@ -1,17 +1,8 @@
 """Token usage is reported once per run, not once per chunk.
 
-`databricks_langchain` 0.20.0 attaches *cumulative* usage to every streamed
-chunk. Anything that accumulates usage across a stream therefore adds the same
-tokens once per chunk. Measured live against `databricks-glm-5-3-flash`: 144 of
-145 chunks carried usage, a true total of 469 tokens summed to 33,116 — an
-inflation of 70x.
-
-The failure is silent and points the wrong way. Nothing errors; a number is
-wrong in the direction that makes the agent look expensive, so acting on it
-means optimising a prompt that was never the cost.
-
-These tests use synthetic chunks rather than the endpoint, so they pin the
-accounting without a workspace. The live before/after was measured separately.
+`databricks_langchain` 0.20.0 attaches cumulative usage to every streamed chunk,
+so anything summing them inflates the total — measured at 70x live. These use
+synthetic chunks, so they pin the accounting without a workspace.
 """
 
 from __future__ import annotations
@@ -133,3 +124,57 @@ def test_the_agent_is_built_with_it():
     from agent_server import agent
 
     assert "build_model(MODEL_ENDPOINT)" in inspect.getsource(agent.init_agent)
+
+
+# ── per-endpoint quirks ──────────────────────────────────────────────────────
+# Two endpoints refuse a payload the others accept, for unrelated reasons. Both
+# were found by running the real agent against all five models, and both fail
+# on the first tool call — so neither shows up in a conversation without tools.
+
+
+def test_tool_result_block_ids_are_stripped():
+    """LangChain tags each content block with `id="lc_<uuid>"`, and
+    Anthropic-shaped endpoints answer `400 … text.id: Extra inputs are not
+    permitted`. Nothing downstream reads the id."""
+    from langchain_core.messages import ToolMessage
+
+    from agent_server.model import _strip_block_ids
+
+    msg = ToolMessage(content=[{"type": "text", "text": "rows", "id": "lc_abc"}],
+                      tool_call_id="c1", name="execute_sql_read_only")
+    assert _strip_block_ids([msg])[0].content == [{"type": "text", "text": "rows"}]
+
+
+def test_stripping_does_not_mutate_graph_state():
+    """The messages belong to the checkpoint a resumed run reads back, so this
+    copies rather than edits in place."""
+    from langchain_core.messages import ToolMessage
+
+    from agent_server.model import _strip_block_ids
+
+    msg = ToolMessage(content=[{"type": "text", "text": "rows", "id": "lc_abc"}],
+                      tool_call_id="c1", name="execute_sql_read_only")
+    _strip_block_ids([msg])
+    assert msg.content[0]["id"] == "lc_abc"
+
+
+def test_a_string_tool_result_is_left_alone():
+    """Most results are plain strings; only the block form carries ids."""
+    from langchain_core.messages import ToolMessage
+
+    from agent_server.model import _strip_block_ids
+
+    msg = ToolMessage(content="rows", tool_call_id="c1", name="t")
+    assert _strip_block_ids([msg])[0].content == "rows"
+
+
+def test_reasoning_effort_is_sent_only_where_it_is_needed():
+    """`gpt-5-6-sol` refuses function tools while a reasoning effort is set and
+    sets one by default. glm-5-3-flash, claude-opus-5 and grok-4-6 all reject
+    the parameter outright, so it cannot be sent globally."""
+    from agent_server.model import build_model
+
+    assert build_model("databricks-gpt-5-6-sol").extra_params == {"reasoning_effort": "none"}
+    for other in ("databricks-glm-5-3-flash", "databricks-claude-opus-5",
+                  "databricks-grok-4-6", "databricks-kimi-k3"):
+        assert build_model(other).extra_params == {}, other

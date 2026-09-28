@@ -1,15 +1,9 @@
 """The score contract every evaluator has to keep.
 
-Langfuse stores a score's `data_type` alongside its value, and gets it wrong by
-default: an `Evaluation` with no `data_type` is stored NUMERIC, so a pass/fail
-check is charted as a float average. The UI then reads "0.67 escaping" where the
-truth is "2 of 3 items passed" — which is not wrong so much as unanswerable,
-because the reader cannot tell a graded 0.67 from two passes and a failure.
-
-These are static checks over the source rather than calls to the scorers. A
-scorer's branches are reached only under conditions this suite would have to
-manufacture one at a time, and the thing worth guarding — *every* return path is
-typed — is exactly what a per-branch test cannot establish.
+Langfuse stores an `Evaluation` with no `data_type` as NUMERIC, so a pass/fail
+check is charted as a float average and "0.67 escaping" cannot be told from two
+passes and a failure. These are static checks over the source, because the thing
+worth guarding is that *every* return path is typed.
 """
 
 from __future__ import annotations

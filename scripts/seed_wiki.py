@@ -1,19 +1,9 @@
 #!/usr/bin/env python3
 """Upload the committed OKF seed bundle to the wiki Volume.
 
-The seed exists so the `/wiki/` tier is reproducible without access to the real
-OpenWiki: a trainee with the Jakarta credential can populate the wiki from the
-repository and run the evaluation. It is also the worked example of the format
-— trainees read it to see what a conformant concept looks like.
-
-The bundle mirrors the Volume's two prefixes and is uploaded as it stands:
-
-    raw/    the landing tree — files as people drop them, any format
-    wiki/   the wiki itself — OKF markdown and its indexes
-
-`wiki/` is also where the agent writes, so a re-seed can overwrite an agent
-note that happens to share a seeded path. Seeded paths are the ones committed
-here, and the digest check leaves anything unchanged alone.
+An initialiser, not a content drop: `wiki/` gets `index.md` alone — an empty
+index carrying the format — and `raw/` is created empty, since chat attachments
+arrive there at runtime rather than being seeded.
 
     uv run seed-wiki            # upload, skipping unchanged files
     uv run seed-wiki --force    # re-upload everything
@@ -32,6 +22,9 @@ from pathlib import Path
 from databricks.sdk import WorkspaceClient
 from dotenv import load_dotenv
 
+from agent_server.env import schema as workshop_schema
+from agent_server.env import volume as workshop_volume
+
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
 
 SEED_DIR = Path(__file__).resolve().parent.parent / "wiki_seed"
@@ -40,12 +33,9 @@ SEED_DIR = Path(__file__).resolve().parent.parent / "wiki_seed"
 def jakarta_client(profile: str | None = None) -> WorkspaceClient:
     """A client for the workspace holding the Volume.
 
-    The same explicit-host, pinned-auth construction `agent_server.tools` uses,
-    and for the same reason: left to its own credential chain the SDK picks up
-    the ambient Databricks auth and sends a token for the wrong workspace.
-
-    `profile` seeds under a CLI profile instead, for a workspace where the
-    service principal does not exist yet — seeding is a person's job anyway.
+    Explicit host and pinned auth, because left to its own credential chain the
+    SDK sends a token for the wrong workspace. `profile` seeds under a CLI
+    profile instead, for a workspace with no service principal yet.
     """
     if profile:
         return WorkspaceClient(profile=profile)
@@ -66,12 +56,9 @@ def jakarta_client(profile: str | None = None) -> WorkspaceClient:
 def is_document(path: Path) -> bool:
     """Whether a seed file belongs on the Volume at all.
 
-    Hidden files are skipped. The seed is a directory on someone's laptop, so it
-    collects what laptops leave lying around — `.DS_Store` on macOS, editor and
-    VCS metadata elsewhere. Uploading those puts junk in a knowledge tier the
-    agent lists and searches, and the agent has no way to tell an artefact from
-    a document. Filtered here rather than in `.gitignore`, which keeps them out
-    of the repository but not out of `rglob`.
+    Hidden files are skipped: a seed directory collects `.DS_Store` and editor
+    metadata, and the agent cannot tell an artefact from a document. Filtered
+    here rather than in `.gitignore`, which does not affect `rglob`.
     """
     return not any(part.startswith(".") for part in path.parts)
 
@@ -94,14 +81,12 @@ def main() -> None:
     ap.add_argument("--force", action="store_true", help="re-upload unchanged files")
     ap.add_argument("--dry-run", action="store_true", help="report without writing")
     ap.add_argument("--profile", help="seed under a CLI profile instead of the service principal")
-    ap.add_argument("--volume", help="seed this Volume instead of DATABRICKS_WIKI_VOLUME")
+    ap.add_argument("--volume", help="seed this Volume instead of the derived one")
     args = ap.parse_args()
 
     # `load_dotenv(override=True)` means `.env` beats the environment, so a
     # second Volume has to be named here rather than exported.
-    volume = args.volume or os.environ.get("DATABRICKS_WIKI_VOLUME")
-    if not volume:
-        sys.exit("DATABRICKS_WIKI_VOLUME is not set. See .env.example.")
+    volume = args.volume or workshop_volume(workshop_schema())
     if not SEED_DIR.is_dir():
         sys.exit(f"No seed bundle at {SEED_DIR}")
 
@@ -115,6 +100,13 @@ def main() -> None:
 
     w = jakarta_client(args.profile) if not args.dry_run else None
     uploaded = skipped = 0
+
+    # The landing zone is empty by design, so no upload creates it.
+    if args.dry_run:
+        print(f"  would create  {base}/raw/")
+    else:
+        w.files.create_directory(f"{base}/raw")
+        print(f"  created       {base}/raw/")
 
     for local in files:
         rel = local.relative_to(SEED_DIR).as_posix()

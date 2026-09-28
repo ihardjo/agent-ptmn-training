@@ -1,27 +1,9 @@
 """Reading configuration out of the environment, tolerantly.
 
-Every value this app is configured with arrives as an environment variable, and
-several arrive from a Databricks Apps **secret resource** — `value_from` in
-`databricks.yml`, backed by a secret scope someone populated by hand. A secret
-written with `databricks secrets put-secret` from a file, an editor, or a copied
-terminal line very often carries a trailing newline, and nothing between that
-scope and this process trims it.
-
-**The failure it produces is opaque.** A client secret with `\\n` on the end is
-not a malformed request; it is a wrong password. The OAuth endpoint answers
-`invalid_client: Client authentication failed`, which reads as "the credential
-is revoked" and sends you to look at the service principal rather than at the
-bytes. The same goes for a host with a trailing space, which yields a DNS
-failure naming a host that looks correct in the log.
-
-So values are stripped on the way in, and a variable that needed stripping is
-reported once — the sanitising fixes this run, and the log line is what stops
-the misconfiguration living in the scope forever. **Names are logged, never
-values**: half of these are credentials.
-
-Whitespace-only is treated as absent. `app.yaml` and `databricks.yml` can both
-declare a variable with no value, which arrives as `""`; every caller here
-already treats empty as unset, so a blank and a space should not differ.
+Values are stripped on the way in, because a secret saved with a trailing
+newline is rejected downstream as a wrong credential rather than a malformed
+one. The second half derives everything that differs between the eight workshop
+instances from one variable, `WORKSHOP_SCHEMA`.
 """
 
 from __future__ import annotations
@@ -31,10 +13,8 @@ import os
 
 logger = logging.getLogger(__name__)
 
-# Reported once per variable per process. Re-reading a value on every request
-# is deliberate elsewhere (see `trace_config`), and a warning per request for a
-# condition that cannot change mid-process is noise that trains people to
-# ignore the log.
+# Once per variable per process: the condition cannot change mid-process, and a
+# warning per request trains people to ignore the log.
 _REPORTED: set[str] = set()
 
 
@@ -54,3 +34,55 @@ def env(name: str, default: str | None = None) -> str | None:
             name,
         )
     return value or default
+
+
+# ── which group this instance is ─────────────────────────────────────────────
+#
+# Eight instances run side by side, one per branch `group-0` … `group-7`, and
+# `WORKSHOP_SCHEMA=group_3` points one at that group's table and Volume. Unset
+# resolves to `default` and logs what it resolved to, since pointing at the
+# wrong schema is otherwise silent.
+
+CATALOG = "workshop_ai_platform"
+DEFAULT_SCHEMA = "default"
+TABLE_NAME = "sdlc_tickets"
+VOLUME_NAME = "agent_wiki"
+
+# Doubled braces so a single `{` in a SQL snippet is not mistaken for one, and
+# no angle brackets so `check-skills`'s XML-tag rule does not see a tag.
+TABLE_PLACEHOLDER = "{{TABLE}}"
+
+_SCHEMA_REPORTED = False
+
+
+def schema() -> str:
+    """The Unity Catalog schema this instance reads, reported once."""
+    global _SCHEMA_REPORTED
+    name = env("WORKSHOP_SCHEMA") or DEFAULT_SCHEMA
+    if not _SCHEMA_REPORTED:
+        _SCHEMA_REPORTED = True
+        logger.info(
+            "WORKSHOP_SCHEMA resolved to %r — table %s, volume %s",
+            name, table(name), volume(name),
+        )
+    return name
+
+
+def table(name: str | None = None) -> str:
+    """The fully qualified ticket table for a schema."""
+    return f"{CATALOG}.{name or env('WORKSHOP_SCHEMA') or DEFAULT_SCHEMA}.{TABLE_NAME}"
+
+
+def volume(name: str | None = None) -> str:
+    """The wiki Volume path for a schema."""
+    return f"/Volumes/{CATALOG}/{name or env('WORKSHOP_SCHEMA') or DEFAULT_SCHEMA}/{VOLUME_NAME}"
+
+
+def resolve(text: str) -> str:
+    """Markdown with `{{TABLE}}` replaced by this instance's table.
+
+    Applied on read rather than on disk, so one checkout serves every group.
+    """
+    if TABLE_PLACEHOLDER not in text:
+        return text
+    return text.replace(TABLE_PLACEHOLDER, table(schema()))

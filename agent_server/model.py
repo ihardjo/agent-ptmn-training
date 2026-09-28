@@ -1,28 +1,15 @@
-"""The chat model, and the streaming-usage bug it has to work around.
+"""The chat model, and the three endpoint quirks it works around.
 
-`databricks_langchain` 0.20.0 attaches **cumulative** usage metadata to every
-streamed chunk rather than to the last one. Each chunk restates the running
-totals, so a consumer that accumulates usage across a stream — Langfuse, a cost
-dashboard, anything summing `usage_metadata` — adds the same tokens once per
-chunk and reports a multiple of the truth.
+1. `databricks_langchain` 0.20.0 attaches cumulative usage to every streamed
+   chunk, so a consumer that sums them reports a multiple of the truth —
+   measured at 29.5x on a 405-token run.
+2. LangChain tags tool-result blocks with an internal `id` that Anthropic-shaped
+   endpoints reject outright.
+3. `gpt-5-6-sol` defaults to a reasoning effort its own chat endpoint refuses to
+   combine with function tools.
 
-Measured against `databricks-glm-5-3-flash`: a fifteen-line answer arrived as 57
-chunks, 56 of them carrying usage. The true total was 405 tokens; summing every
-chunk gives 11,953, an inflation of **29.5x**. The input count is worse in kind
-than in size — 23 input tokens restated 56 times — because it makes a short
-prompt look like a context-window problem.
-
-**The failure is silent and it points the wrong way.** Nothing errors; a number
-is simply wrong, and wrong in the direction that makes the agent look
-expensive. Acting on it means optimising a prompt that was never the cost.
-
-The fix is to make the stream say once what it currently says continuously:
-strip usage from every chunk, keep the last one, and emit a single trailing
-chunk carrying the totals. Ported from the `brd-deep-agent` repo, which hit the
-same bug on the same version.
-
-Remove this when `databricks_langchain` emits usage only on the final chunk —
-`UsageRelay` is a workaround with a version attached, not a design.
+Each is a workaround with a version attached, not a design. Verified against
+glm-5-3-flash, kimi-k3, claude-opus-5, gpt-5-6-sol and grok-4-6.
 """
 
 from __future__ import annotations
@@ -31,7 +18,7 @@ import logging
 from typing import AsyncIterator, Iterator
 
 from databricks_langchain import ChatDatabricks
-from langchain_core.messages import AIMessageChunk
+from langchain_core.messages import AIMessageChunk, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGenerationChunk
 
 logger = logging.getLogger(__name__)
@@ -40,9 +27,8 @@ logger = logging.getLogger(__name__)
 class UsageRelay:
     """Strips cumulative usage from every chunk and re-emits only the final total.
 
-    Held apart from the model class because the sync and async streams differ
-    only in how they iterate, and the accounting they would otherwise duplicate
-    is the part worth getting right once.
+    Apart from the model class because the sync and async streams differ only in
+    how they iterate.
     """
 
     def __init__(self) -> None:
@@ -53,8 +39,7 @@ class UsageRelay:
         msg = chunk.message
         if not isinstance(msg, AIMessageChunk) or msg.usage_metadata is None:
             return chunk
-        # Last wins rather than accumulating: the values are already cumulative,
-        # so the final chunk's figures are the run's totals. Summing them here
+        # Last wins, not sum: the values are already cumulative, so adding them
         # would reproduce the bug on the other side of the fix.
         self._last = msg.usage_metadata
         return ChatGenerationChunk(
@@ -65,9 +50,8 @@ class UsageRelay:
     def tail(self) -> ChatGenerationChunk | None:
         """The one trailing chunk carrying the totals, or None if none were seen.
 
-        None matters: a stream that carried no usage at all must not gain an
-        empty usage record, which would report zero tokens as a fact rather
-        than as an absence.
+        None rather than zeros: a stream that reported nothing must not gain a
+        usage record stating zero tokens as a fact.
         """
         if self._last is None:
             return None
@@ -97,6 +81,47 @@ class UsageCorrectedChatDatabricks(ChatDatabricks):
             yield tail
 
 
+def _strip_block_ids(messages: list[BaseMessage]) -> list[BaseMessage]:
+    """Tool results without LangChain's internal block `id`.
+
+    LangChain tags each content block with `id="lc_<uuid>"`. Anthropic-shaped
+    endpoints validate `tool_result.content` strictly and answer
+    `400 … text.id: Extra inputs are not permitted`, so the run dies on the first
+    tool call. The id is LangChain bookkeeping that nothing downstream reads.
+
+    Copies rather than mutates: the messages belong to graph state, and stripping
+    in place would edit the checkpoint a resumed run reads back.
+    """
+    out: list[BaseMessage] = []
+    for message in messages:
+        if isinstance(message, ToolMessage) and isinstance(message.content, list):
+            blocks = [
+                {k: v for k, v in block.items() if k != "id"} if isinstance(block, dict) else block
+                for block in message.content
+            ]
+            if blocks != message.content:
+                message = message.model_copy(update={"content": blocks})
+        out.append(message)
+    return out
+
+
+class _StripsBlockIds(UsageCorrectedChatDatabricks):
+    """Removes the block ids on the way out, for endpoints that refuse them."""
+
+    def _prepare_inputs(self, messages, *args, **kwargs):  # type: ignore[override]
+        return super()._prepare_inputs(_strip_block_ids(list(messages)), *args, **kwargs)
+
+
+# `gpt-5-6-sol` refuses function tools while a reasoning effort is set, and sets
+# one by default — so the fix is to send `none` explicitly. It is per-model
+# because glm-5-3-flash, claude-opus-5 and grok-4-6 all reject the parameter as
+# an unknown argument; only gpt-5-6-sol needs it and only kimi-k3 tolerates it.
+NEEDS_REASONING_EFFORT_NONE = ("gpt-5-6-sol",)
+
+
 def build_model(endpoint: str) -> ChatDatabricks:
-    """The chat model the agent is built with."""
-    return UsageCorrectedChatDatabricks(endpoint=endpoint)
+    """The chat model the agent is built with, with per-endpoint quirks applied."""
+    extra: dict = {}
+    if any(name in endpoint for name in NEEDS_REASONING_EFFORT_NONE):
+        extra["reasoning_effort"] = "none"
+    return _StripsBlockIds(endpoint=endpoint, extra_params=extra)

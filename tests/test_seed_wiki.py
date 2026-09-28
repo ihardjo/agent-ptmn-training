@@ -19,7 +19,10 @@ from scripts.seed_wiki import is_document
     [
         "index.md",
         "policies/resolution-targets.md",
-        "policies/SOP-Layanan-IT.docx",
+        # Not markdown, and not seeded by anything today — the filter is about
+        # hidden files, not about format, and the landing tree takes whatever a
+        # person attaches.
+        "uploads/s/SOP-Layanan-IT.docx",
     ],
 )
 def test_documents_are_uploaded(path):

@@ -1,27 +1,10 @@
 """The agent's filesystem: a backend over a Unity Catalog Volume, and the
 tiers assembled from it.
 
-Two things live here because one is only ever used by the other. `VolumeBackend`
-is the adapter — how a Volume is read and written at all. Below it,
-`wiki_routes`, `build_backend` and `filesystem_permissions` are the composition:
-which prefixes exist, what each one means, and which of them the agent may
-write to.
-
-`VolumeBackend` first, then the tiers, since the tiers are built out of it.
-
-## The adapter
-
-A deepagents filesystem backend over a Unity Catalog Volume.
-
-Databricks Apps deploy the repository to local disk but give it **no FUSE
-mount** for Unity Catalog Volumes, so `FilesystemBackend(root_dir=...)` cannot
-be pointed at one. The Volume is reachable only through the Files API, which is
-why this exists rather than reusing the filesystem backend.
-
-Only the synchronous half of `BackendProtocol` is implemented. The protocol's
-async methods default to `asyncio.to_thread(self.<sync>)`, so an async server
-gets non-blocking behaviour for free and a second code path is not worth
-maintaining.
+Databricks Apps give no FUSE mount for Volumes, so `FilesystemBackend` cannot be
+pointed at one and this reaches the Files API instead. Only the synchronous half
+of `BackendProtocol` is implemented; the async methods default to
+`asyncio.to_thread`.
 """
 
 from __future__ import annotations
@@ -60,15 +43,16 @@ from deepagents.middleware.filesystem import FilesystemPermission
 
 from agent_server.documents import UnreadableDocumentError, decode
 from agent_server.env import env
+from agent_server.env import schema as workshop_schema
+from agent_server.env import volume as workshop_volume
 from agent_server.okf import ensure_conformant, is_reserved
 from agent_server.skills import SKILLS_MOUNT
 from agent_server.clients import jakarta_workspace_client
 
 logger = logging.getLogger(__name__)
 
-# Reading a tier means downloading it. Small by design — this tier holds policy
-# documents, not data — but bounded anyway so a mistake on the Volume cannot
-# turn one grep into an unbounded transfer.
+# Reading a tier means downloading it. Bounded so a mistake on the Volume
+# cannot turn one grep into an unbounded transfer.
 MAX_SCAN_FILES = 500
 
 
@@ -97,16 +81,10 @@ class VolumeEscapeError(ValueError):
 class VolumeBackend(BackendProtocol):
     """Files under one subdirectory of one Unity Catalog Volume.
 
-    Each instance is confined to `<volume_root>/<subdir>`. Two instances
-    sharing a volume root but differing in subdirectory are two tiers as far
-    as the agent is concerned, which is how a single Volume carries both
-    human-authored source content and agent-written notes while a path prefix
-    still states which is which.
-
-    `okf_actor` turns on conformant-write enforcement. When set, a markdown
-    document written here is given the frontmatter OKF requires before it lands,
-    because the agent is a producer of this bundle and a note without a `type`
-    breaks the bundle for every later reader.
+    Each instance is confined to `<volume_root>/<subdir>`, which is how one
+    Volume carries both human-authored source and agent-written notes while a
+    path prefix still states which is which. `okf_actor`, when set, stamps the
+    frontmatter OKF requires onto markdown written here.
     """
 
     def __init__(
@@ -213,17 +191,11 @@ class VolumeBackend(BackendProtocol):
     def upload_bytes(self, file_path: str, data: bytes) -> str:
         """Write raw bytes, bypassing the text and OKF paths. Returns the Volume path.
 
-        Not part of `BackendProtocol`, and not reachable by the agent: this is
-        the ingest side, used by the chat upload route in `routes.py`. Two
-        reasons it cannot go through `write`. A `.docx` is a ZIP, so decoding it
-        to UTF-8 to write it would corrupt it. And `write` applies
-        `_as_okf`, which would stamp OKF frontmatter onto a markdown file a
-        person attached — turning their document into a malformed concept
-        rather than leaving it as the source it is.
-
-        Escapes raise rather than returning an error result, because the caller
-        is a request handler that owes the user a status code and this is the
-        only signal that says which one.
+        Not reachable by the agent: this is ingest, from the chat upload route.
+        It cannot go through `write`, which would UTF-8 decode a `.docx` ZIP and
+        stamp OKF frontmatter onto an attachment. Escapes raise rather than
+        returning an error result, because the caller owes the user a status
+        code.
         """
         target = self._resolve(file_path)
         self._client.files.upload(target, io.BytesIO(data), overwrite=True)
@@ -338,11 +310,8 @@ class VolumeBackend(BackendProtocol):
         """Every text file under this tier, as the `path -> FileData` mapping
         the shared grep and glob helpers expect.
 
-        There is no ripgrep to delegate to and no local file to hand it, so
-        search is a recursive list plus a download of each file. Acceptable
-        while the tier holds policy documents; the trigger to revisit is the
-        tier growing past `MAX_SCAN_FILES`, at which point an index or a search
-        service is the answer rather than a wider scan.
+        No ripgrep to delegate to, so search is a recursive list plus a download
+        of each file. Revisit when the tier grows past `MAX_SCAN_FILES`.
         """
         files: dict[str, Any] = {}
         try:
@@ -396,34 +365,16 @@ WIKI_SUBDIR = "wiki"
 
 
 def wiki_routes(client: Optional[Any] = None, okf_actor: Optional[str] = None) -> dict[str, Any]:
-    """The two wiki routes, or nothing when the Volume is not configured.
+    """The two wiki routes, or nothing when the Jakarta credential is absent.
 
-    Both tiers are subdirectories of a single Volume, reached with the same
-    Jakarta credentials as the SQL tools. The grant is therefore uniform and
-    read-only on `/wiki/raw/` is *not* enforced by it — a UC volume grant
-    is per-volume, not per-path. The deny rule in `filesystem_permissions()` is
-    what refuses the write, which makes that rule load-bearing rather than
-    defence in depth.
-
-    Absence is a supported state, not a failure: the course is taught on
-    laptops that may not hold the credential, and an agent that refuses to
-    start without a wiki is worse than one that starts without the tier.
-
-    `client` is injectable so a caller can supply one. Constructing a
-    `WorkspaceClient` is not free or reliably fast — a wrong host sends the SDK
-    into an authentication retry that blocks rather than raising — so the
-    construction is guarded and a failure degrades this run to no tier.
-
-    `okf_actor` is the caller's identity to stamp onto notes it writes; this
-    module has no opinion on what the agent is, so it takes the value rather
-    than computing it.
+    The path derives from `WORKSHOP_SCHEMA`, so a group branch sets one variable
+    rather than two that can disagree. A UC volume grant is per-volume, not
+    per-path, so read-only on `/wiki/raw/` is enforced by the deny rule in
+    `filesystem_permissions()` and not by the grant.
     """
-    volume = env("DATABRICKS_WIKI_VOLUME")
-    if not volume:
-        logger.info(
-            "DATABRICKS_WIKI_VOLUME not set — continuing without the /wiki/ tier."
-        )
-        return {}
+    # The credential is the only gate. It has to be: the Volume lives in another
+    # workspace, so no credential means no tier however the path is spelled.
+    volume = workshop_volume(workshop_schema())
     if client is None:
         try:
             client = jakarta_workspace_client()
@@ -436,23 +387,18 @@ def wiki_routes(client: Optional[Any] = None, okf_actor: Optional[str] = None) -
             return {}
     if client is None:
         logger.info(
-            "DATABRICKS_WIKI_VOLUME is set but DATABRICKS_JAKARTA_* is not — "
-            "continuing without the /wiki/ tier."
+            "DATABRICKS_JAKARTA_* is not configured — "
+              "continuing without the /wiki/ tier."
         )
         return {}
     return {
         WIKI_SOURCE_MOUNT: VolumeBackend(client, volume, WIKI_SOURCE_SUBDIR),
-        # No write-time identity guard on this tier: the check it used was
-        # removed with `agent_server/privacy.py`. Durable writes are covered
-        # only by the system prompt and, for the main agent, by the fact that
-        # `PIIMiddleware` pseudonymises identities before the model sees them.
+        # No write-time identity guard here: durable writes are covered by the
+        # system prompt and by `PIIMiddleware` masking before the model sees.
         WIKI_MOUNT: VolumeBackend(
             client,
             volume,
             WIKI_SUBDIR,
-            # The write path supplies OKF frontmatter itself. Asking the prompt
-            # for it would make conformance a matter of good behaviour; this
-            # makes it a property of the tier.
             okf_actor=okf_actor,
         ),
     }
@@ -461,27 +407,11 @@ def wiki_routes(client: Optional[Any] = None, okf_actor: Optional[str] = None) -
 def uploads_backend(client: Optional[Any] = None) -> Optional[VolumeBackend]:
     """The backend the chat upload route writes through, or None when unconfigured.
 
-    The Volume's `raw/` subdirectory, with **no** `okf_actor`: an attachment is
-    a source document, and stamping OKF frontmatter onto someone's markdown
-    would turn it into a malformed concept rather than leaving it as what they
-    sent.
-
-    Deliberately a separate instance from the one `wiki_routes` mounts, not the
-    same object reached through the agent's backend. The agent's route is behind
-    the `/wiki/raw/**` write deny; this one is not, and that difference should
-    be visible as two constructions rather than hidden in a permission check
-    that only applies on one path. Uploading is a person putting a file in the
-    landing tree — the same act the tier already exists for — and the agent
-    still cannot write there.
-
-    Built per request rather than cached. An upload is rare and the client
-    construction is the same one `wiki_routes` does; a module-level singleton
-    would only add a state to get wrong when the environment changes under a
-    reload.
+    The Volume's `raw/` subdirectory with no `okf_actor`, since stamping OKF
+    frontmatter onto an attachment would turn it into a malformed concept. A
+    separate instance from the agent's, which is behind the write deny.
     """
-    volume = env("DATABRICKS_WIKI_VOLUME")
-    if not volume:
-        return None
+    volume = workshop_volume(workshop_schema())
     if client is None:
         try:
             client = jakarta_workspace_client()
@@ -504,25 +434,9 @@ def build_backend(
         /wiki/raw/         read-only landing tree, any format, written by people
         /wiki/             the wiki: an OKF bundle, durable, shared across users
 
-    The default is state rather than local disk on purpose. An agent writing
-    scratch files onto a container's ephemeral filesystem has produced something
-    that looks durable and is not; keeping the default in state makes the
-    lifetime honest and the prefix makes it visible.
-
-    `/skills/` is still not a route: `skill_files()` is what puts content there,
-    seeded into state on invoke (see `routes.py`) rather than mounted.
-
-    **`/wiki/` is now a route, and that reverses an earlier decision.** It used
-    to be deliberately unmounted so that a bare `/wiki/x.md` fell through to
-    scratch rather than quietly becoming durable — the wiki lived one level
-    down, at `/wiki/notes/`. Collapsing that level buys a shorter path the model
-    gets right more often, and costs exactly the protection that was there:
-    anything written to `/wiki/<name>` is durable and shared, with no second
-    segment to make the intent explicit.
-
-    Routing is longest-prefix, so `/wiki/raw/…` still reaches the landing tree
-    rather than the bundle. That ordering is what keeps the read-only tier
-    read-only, and it is `CompositeBackend`'s behaviour rather than ours — see
+    The default is state, not local disk: a scratch file on a container's
+    filesystem looks durable and is not. Routing is longest-prefix, so
+    `/wiki/raw/…` still reaches the landing tree rather than the bundle — see
     `test_a_raw_path_still_reaches_the_landing_tree`.
     """
     routes: dict[str, Any] = wiki_routes(wiki_client, okf_actor=okf_actor)
@@ -533,26 +447,11 @@ def build_backend(
 def filesystem_permissions() -> list[FilesystemPermission]:
     """Deny writes under the skills mount and the wiki's landing tree.
 
-    Telling the agent not to edit its own instructions is not a control. A rule
-    that refuses the write is, and it holds against an injected instruction as
-    well as against an agent's own initiative — which is the point of keeping
-    skills in the repository, where a change to them has to pass review.
-
-    The same rule covers `/wiki/raw/` for a different reason. It is where
-    people drop files, in whatever format they arrived in, and what someone
-    put there should change where they put it rather than through the agent.
-    Here the rule is the *only* thing enforcing that: the Volume grant covers
-    both subdirectories, so a gap in this list is a correctness bug and not a
-    missing hardening measure.
-
-    `/wiki/` itself is deliberately absent. It is the wiki, holding authored
-    policy and the agent's own notes side by side, and the agent writes there;
-    `generated.by` is what separates the two, not a permission.
-
-    Note the two rules are not symmetric in how they are matched: `/wiki/raw/**`
-    has to deny a *longer* prefix than the `/wiki/` route that is allowed. A
-    glob that stopped at `/wiki/**` would deny the whole bundle and the agent
-    could never write a note.
+    Telling the agent not to edit its own instructions is not a control; a rule
+    that refuses the write is. For `/wiki/raw/` this rule is the *only* thing
+    enforcing read-only, since the Volume grant covers both subdirectories — a
+    gap here is a correctness bug. `/wiki/` is absent because the agent writes
+    there, and `/wiki/raw/**` must deny a longer prefix than `/wiki/` allows.
     """
     return [
         FilesystemPermission(

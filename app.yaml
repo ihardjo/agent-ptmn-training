@@ -15,9 +15,10 @@ env:
     valueFrom: "langfuse-secret"
   - name: LANGFUSE_HOST
     value: "https://agentmonitoring.pertamina.ai"
+  # Per-branch, like WORKSHOP_SCHEMA below: app.yaml has no bundle variable.
   - name: LANGFUSE_TRACE_NAME
     value: "agent-workshop-ai-default"
-  # Jakarta workspace — managed SQL MCP over workshop_ai_platform.default
+  # Jakarta workspace — managed SQL MCP over the WORKSHOP_SCHEMA schema
   - name: DATABRICKS_JAKARTA_HOST
     value: "https://dbc-77e33eef-a7e4.cloud.databricks.com"
   - name: DATABRICKS_JAKARTA_CLIENT_ID
@@ -25,5 +26,7 @@ env:
   - name: DATABRICKS_JAKARTA_CLIENT_SECRET
     valueFrom: "databricks-jakarta-secret"
   # Volume-backed wiki — OKF bundle on a Unity Catalog Volume in Jakarta
-  - name: DATABRICKS_WIKI_VOLUME
-    value: "/Volumes/workshop_ai_platform/default/agent_wiki"
+  # app.yaml is the UI/Git deploy path and has no bundle variable, so the
+  # group is named here. `databricks.yml` derives it from `--var=group=...`.
+  - name: WORKSHOP_SCHEMA
+    value: "default"

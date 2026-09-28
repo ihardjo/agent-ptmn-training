@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
 """
-Start script for running frontend and backend processes concurrently.
+Start the backend and the chat UI together.
 
-Requirements:
-1. Not reporting ready until BOTH frontend and backend processes are ready
-2. Exiting as soon as EITHER process fails
-3. Printing error logs if either process fails
+Reports ready only when both are, exits as soon as either fails, and prints the
+logs of whichever did.
 
 Usage:
     start-app [OPTIONS]
 
-All options are passed through to the backend server (start-server).
-See 'uv run start-server --help' for available options.
+Options other than --no-ui pass through to start-server.
 """
 
 import argparse

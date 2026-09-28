@@ -1,23 +1,9 @@
 """Accepting a file from the chat, and refusing the ones that should not arrive.
 
-**Uploads do not travel in the chat payload.** They are written to the wiki
-Volume and the agent reads them there, which is where it reads everything else a
-person put on the Volume. That removes the whole question of getting attachment
-bytes through `POST /invocations` and back out again, and it means a file
-attached in the chat and a file dropped on the Volume by hand are the same file
-by the time `read_file` looks at it.
-
-They land under `raw/uploads/<session>/` — the landing tree, not the notes
-bundle. `/wiki/raw/` is where people put things, and an attachment is a person
-putting something there; `/wiki/` is the OKF bundle the agent authors, and
-a `.csv` someone attached is not a concept document. The per-session directory
-is so the agent can list one conversation's attachments without reading every
-other conversation's.
-
-**Writing here does not give the agent write access.** This module is called by
-the FastAPI upload route, which holds its own `VolumeBackend` and is not subject
-to the agent's `FilesystemPermission` rules. The deny rule on `/wiki/raw/**` is
-unchanged, so the agent still only reads what was attached.
+Uploads do not travel in the chat payload: they are written to `raw/uploads/
+<session>/` on the wiki Volume and the agent reads them there, like everything
+else a person put on the Volume. The upload route holds its own backend, so this
+does not give the agent write access to `/wiki/raw/`.
 """
 
 from __future__ import annotations
@@ -25,12 +11,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-# Every extension this agent can actually turn into text, and nothing else. An
-# allowlist rather than a denylist: the set of things it can read is small and
-# known, and a denylist is a list of the attacks somebody already thought of.
-#
-# `.docx` is here because `agent_server/documents.py` extracts it — the same
-# path `/wiki/raw/` already uses for the policy documents people put there.
+# An allowlist, not a denylist: what this agent can read is small and known,
+# and a denylist is a list of the attacks somebody already thought of.
 ALLOWED_SUFFIXES = frozenset(
     {
         ".md", ".txt", ".csv", ".tsv", ".json", ".yaml", ".yml", ".xml",
@@ -39,17 +21,15 @@ ALLOWED_SUFFIXES = frozenset(
     }
 )
 
-# Rejected by name rather than by content sniffing, because the reason is not
-# "this might be dangerous" but "I cannot read it, and expanding it server-side
-# is a decision nobody made".
+# Rejected by name, not by sniffing: the reason is "I cannot read it", not
+# "this might be dangerous".
 ARCHIVE_SUFFIXES = frozenset({".zip", ".tar", ".gz", ".tgz", ".7z", ".rar", ".bz2", ".xz", ".jar"})
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_REQUEST_BYTES = 25 * 1024 * 1024
 
-# Conservative: a name that is not obviously a filename is refused rather than
-# sanitised into something the user did not choose and will not recognise in the
-# confirmation.
+# A name that is not obviously a filename is refused rather than sanitised into
+# something the user did not choose.
 SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ \-()]{0,199}$")
 
 UPLOADS_SUBDIR = "uploads"
@@ -119,41 +99,34 @@ def check_size(filename: str, size: int, running_total: int = 0) -> None:
 
 
 def safe_session(session: str | None) -> str:
-    """The chat id, used as a directory name. Anything unexpected becomes `unattributed`.
+    """The chat id as a directory name; anything unexpected becomes `unattributed`.
 
-    Never raises. A session id this does not recognise is a reason to file the
-    upload somewhere predictable, not a reason to refuse a file the user has
-    already chosen.
+    Never raises: an unrecognised session id is a reason to file the upload
+    somewhere predictable, not to refuse a file the user already chose.
     """
     candidate = (session or "").strip()
     return candidate if re.fullmatch(r"[A-Za-z0-9._\-]{1,128}", candidate) else "unattributed"
 
 
 def upload_path(session: str, filename: str) -> str:
-    """Where the file goes, relative to the tier that stores it.
+    """Where the file goes, relative to the `raw/` backend that stores it.
 
-    Tier-relative rather than agent-visible: the caller holds a `VolumeBackend`
-    rooted at the Volume's `raw/` subdirectory, so this is the path that backend
-    takes. The agent sees the same file one prefix up, at
-    `/wiki/raw/uploads/<session>/<filename>`.
+    The agent sees the same file one prefix up, at `/wiki/raw/uploads/...`.
     """
     return f"/{UPLOADS_SUBDIR}/{safe_session(session)}/{filename}"
 
 
 def agent_path(session: str, filename: str) -> str:
-    """The same file as the agent names it. This is what goes in the reply to the user."""
+    """The same file as the agent names it, which is what the reply quotes."""
     from agent_server.backends import WIKI_SOURCE_MOUNT
 
     return f"{WIKI_SOURCE_MOUNT.rstrip('/')}{upload_path(session, filename)}"
 
 
 def store(backend, session: str, filename: str, data: bytes) -> StoredUpload:
-    """Write one validated file to the tier backend it is given.
+    """Write one validated file to the backend it is given.
 
-    Bytes rather than text, through `upload_bytes`: a `.docx` is a ZIP and
-    decoding it to write it would corrupt it. The read path already knows how to
-    turn those bytes back into text (`agent_server/documents.py`), so the store
-    does not need an opinion.
+    Bytes rather than text: a `.docx` is a ZIP and decoding it would corrupt it.
     """
     path = upload_path(session, filename)
     backend.upload_bytes(path, data)

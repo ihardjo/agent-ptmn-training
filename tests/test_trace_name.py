@@ -1,14 +1,8 @@
 """What a served run is called in Langfuse.
 
-Every trace this app produced was named `LangGraph`, the compiled graph's own
-name. A workspace tracing more than one agent cannot tell them apart in the
-trace list from that, and the name is the only field the list filters on
-without opening a trace.
-
-The mechanism is LangChain's `run_name`, not a Langfuse setting: the handler
-takes the root run's name as the trace name. That was verified against a live
-Langfuse trace before it was written into `routes.py`; these tests pin the
-wiring so it cannot be dropped in a refactor.
+Every trace arrived as `LangGraph`, so a workspace tracing several agents could
+not tell them apart. The mechanism is LangChain's `run_name`, which the handler
+reads as the trace name.
 """
 
 from __future__ import annotations

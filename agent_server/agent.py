@@ -1,20 +1,21 @@
 """Assembling the agent: the model, its prompt, its tools, and its tiers.
 
-This is the composition root and nothing else. What each part *is* lives in the
-module that owns it — `mcp` for tool discovery, `skills` for the skill menu,
-`backends` for the tiers, `middleware` for the stack — so that changing one
-does not mean reading all of them.
+The composition root and nothing else — what each part *is* lives in the module
+that owns it.
 """
 
 import logging
 from pathlib import Path
 
 from deepagents import create_deep_agent
+from langchain.agents.middleware import InterruptOnConfig
+from langgraph.checkpoint.memory import InMemorySaver
 
 from agent_server.backends import build_backend, filesystem_permissions
 from agent_server.middleware import build_middlewares
 from agent_server.model import build_model
 from agent_server.skills import SKILLS_MOUNT
+from agent_server.env import resolve
 from agent_server.tools import agent_tools
 
 logger = logging.getLogger(__name__)
@@ -25,9 +26,14 @@ PROMPTS_DIR = Path(__file__).parent / "prompts"
 MODEL_ENDPOINT = "databricks-glm-5-3-flash"
 
 ## TODO 2: System Prompt — edit `prompts/system_prompt.md`.
-SYSTEM_PROMPT = (PROMPTS_DIR / "system_prompt.md").read_text()
+SYSTEM_PROMPT = resolve((PROMPTS_DIR / "system_prompt.md").read_text())
 
-OKF_ACTOR = f"agent-ptmn-training/{MODEL_ENDPOINT}"
+OKF_ACTOR = "agent"
+
+CHECKPOINTER = InMemorySaver()
+INTERRUPT_ON = {
+    "execute_sql_read_only": InterruptOnConfig(allowed_decisions=["approve", "reject"]),
+}
 
 async def init_agent(flag_pii: bool = True, flag_tool_retries: bool = True):
     return create_deep_agent(
@@ -38,4 +44,6 @@ async def init_agent(flag_pii: bool = True, flag_tool_retries: bool = True):
         backend=build_backend(okf_actor=OKF_ACTOR),
         permissions=filesystem_permissions(),
         middleware=build_middlewares(flag_pii, flag_tool_retries),
+        interrupt_on=INTERRUPT_ON,
+        checkpointer=CHECKPOINTER,
     )

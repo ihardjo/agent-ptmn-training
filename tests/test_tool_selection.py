@@ -1,13 +1,9 @@
 """Selecting the SQL tools.
 
-`TODO 3` in `init_agent` is meant to be edited during a workshop, so the three
-settings it documents — no names, a named list, `[]` — are all exercised here
-rather than trusted to read correctly.
-
-One of these guards a mistake that leaves no trace: caching the *selection*
-rather than the discovered list would bake the first request's choice into
-the process, and `init_agent()` runs per request, so it would only show on
-the second, differing call.
+`TODO 3` in `init_agent` is meant to be edited during a workshop, so its three
+settings are exercised rather than trusted to read correctly. One test guards a
+mistake that leaves no trace: caching the *selection* rather than the discovered
+list would bake the first request's choice into the process.
 """
 
 from __future__ import annotations

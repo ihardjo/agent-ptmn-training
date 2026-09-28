@@ -1,11 +1,8 @@
 """Reading configuration out of the environment, tolerantly.
 
-The failure this guards against is one that already happened here. A Jakarta
-client secret was rejected with `invalid_client: Client authentication failed`
-— which reads as a revoked credential and sends you to inspect the service
-principal, not the bytes. A secret written from a file or a copied terminal line
-carries a trailing newline, and nothing between the secret scope and this
-process trims it.
+A Jakarta client secret was once rejected with `invalid_client`, which reads as a
+revoked credential and sends you to inspect the service principal rather than the
+bytes. It had a trailing newline.
 """
 
 from __future__ import annotations

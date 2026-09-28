@@ -1,21 +1,10 @@
 """Open Knowledge Format v0.2 — parsing, conformance, and conformant writes.
 
-OKF is the format the `/wiki/` tier is written in: a directory tree of markdown
-concepts, each carrying a YAML frontmatter block. Spec:
-https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md
-
-Only three things are actually required (§11):
-
-1. every non-reserved `.md` file has a parseable YAML frontmatter block,
-2. every frontmatter block has a non-empty `type`,
-3. `index.md` and `log.md`, when present, are a listing and a history (§8, §9)
-   rather than concepts.
-
-Everything else in the spec is SHOULD, and consumers **must not** reject a
-document for an unknown `type`, unrecognised keys, missing optional fields, or a
-broken cross-link. That asymmetry is the point of the format and it is enforced
-here in both directions: `conformance_errors` reports only the three hard rules,
-and nothing in this module refuses a document for a soft violation.
+OKF is the format the `/wiki/` tier is written in: markdown concepts carrying a
+YAML frontmatter block. Only three things are required (§11) — parseable
+frontmatter, a non-empty `type`, and `index.md`/`log.md` being a listing and a
+history rather than concepts. Everything else is SHOULD, and nothing here
+refuses a document for a soft violation.
 """
 
 from __future__ import annotations
@@ -49,11 +38,9 @@ def _iso(value: datetime | date) -> str:
 class _Dumper(yaml.SafeDumper):
     """A dumper that writes timestamps the way OKF reads them.
 
-    Needed because YAML parses an unquoted `2026-07-01T04:00:00Z` into a
-    `datetime`, and `safe_dump` writes a `datetime` back as
-    `2026-07-01 04:00:00+00:00` — space-separated, not the `T...Z` form §5
-    specifies. Every rewrite of a document would otherwise walk its timestamps
-    one step further from the spec, silently and irreversibly.
+    YAML round-trips an unquoted `2026-07-01T04:00:00Z` into a space-separated
+    form §5 does not specify, so every rewrite would walk a document's timestamps
+    one step further from the spec.
     """
 
 
@@ -170,16 +157,10 @@ def ensure_conformant(
 ) -> str:
     """Return `content` with the frontmatter a conformant concept needs.
 
-    Called on the write path rather than requested in the prompt. The agent is a
-    *producer* of this bundle, not only a consumer, so a note written without
-    frontmatter would break conformance for every later reader — and an
-    instruction to remember frontmatter is the kind of thing that holds most of
-    the time rather than all of the time.
-
-    What it supplies: a non-empty `type` (from the fixed note vocabulary, never
-    the model's choice) and `generated: {by, at}` so a later reader can tell what
-    produced the note and when. What it leaves alone: everything else the agent
-    wrote, including keys this module does not recognise.
+    Called on the write path rather than asked for in the prompt: the agent
+    produces this bundle, and an instruction to remember frontmatter holds most
+    of the time rather than all of it. Supplies `type` and `generated`, and
+    leaves everything else the agent wrote alone.
     """
     stamp = (now or datetime.now(timezone.utc)).replace(microsecond=0).isoformat().replace(
         "+00:00", "Z"

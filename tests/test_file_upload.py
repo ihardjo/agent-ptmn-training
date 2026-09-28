@@ -1,16 +1,8 @@
 """Attaching a file in the chat, and the overlay that makes the paperclip exist.
 
-**The failure this whole feature exists to fix is a silent one.** The stock
-`e2e-chatbot-app-next` template renders a file picker, an upload queue and
-attachment previews with no button to trigger them and no server route behind
-them, so the upload path is present and unreachable. Every test here is written
-against the possibility of restoring that state by accident — a patch that
-no-ops, a route that accepts a file and drops it, an error the user never sees.
-
-The fixture the overlay tests run against is an *excerpt* of the real template,
-committed under `tests/fixtures/template_excerpt/`. It exercises the patch
-machinery; it cannot detect upstream drift. Only a clone at startup can, which
-is what `scripts/start_app.py` does and why it exits rather than warning.
+The stock template renders a file picker and previews with no button to trigger
+them and no route behind them, so the upload path is present and unreachable.
+Every test here is written against restoring that state by accident.
 """
 
 from __future__ import annotations
@@ -190,7 +182,7 @@ def test_uploads_without_a_volume_are_refused_clearly(monkeypatch):
     with TestClient(_app(None, monkeypatch)) as api:
         response = upload(api, "a.sql")
     assert response.status_code == 503
-    assert "DATABRICKS_WIKI_VOLUME" in response.json()["detail"]["error"]
+    assert "DATABRICKS_JAKARTA" in response.json()["detail"]["error"]
 
 
 # ---------------------------------------------------------------------------

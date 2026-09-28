@@ -150,5 +150,5 @@ def wiki(client, volume_root):
         client,
         volume_root,
         "wiki",
-        okf_actor="agent-ptmn-training/test-model",
+        okf_actor="agent-under-test",
     )

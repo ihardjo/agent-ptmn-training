@@ -1,23 +1,8 @@
-"""Pseudonymising staff addresses before the model sees them.
+"""The PII net: what it redacts, and that it is on where it should be.
 
-**Read this before changing the configuration.** An earlier version ran on the
-way *out* (`apply_to_output` with `strategy="redact"`). Every test passed, it
-worked under `ainvoke`, and it protected no served request at all: both routes
-stream with `astream(stream_mode=["updates", "messages"])`, and the answer is
-emitted token by token on the `messages` channel *before* `after_model`
-rewrites state. langchain's stream transformer would cover that, but it reads
-langgraph v3 protocol events and never sees legacy `AIMessageChunk` tuples.
-
-Two lessons are encoded here.
-
-A synthetic `AIMessage` cannot tell you whether the net works, so the
-behavioural tests below run against **the instance `init_agent` actually
-builds**, recovered by capturing what it hands to `create_deep_agent`, rather
-than a hand-written copy of the configuration that could drift from it.
-
-And the wiring is as easy to get wrong as the settings: the `flag_pii` branch
-was once inverted, so the default — every served request — silently got no
-middleware at all. `test_the_net_is_on_by_default` is the guard for that.
+`PIIMiddleware` pseudonymises identities before the model sees them. It is on by
+default for serving and off for evaluation, so a scored run measures the model
+rather than the net.
 """
 
 from __future__ import annotations
@@ -28,6 +13,7 @@ import re
 
 from langchain.agents.middleware import PIIMiddleware, TodoListMiddleware
 from langchain.agents.middleware._redaction import detect_email
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain.messages import AIMessage, HumanMessage, ToolMessage
 
 import agent_server.agent as agent_mod
@@ -68,7 +54,12 @@ def _middleware(monkeypatch, **kwargs) -> list:
         return []
 
     monkeypatch.setattr(agent_mod, "create_deep_agent", fake_create)
-    monkeypatch.setattr(agent_mod, "build_model", lambda *a, **kw: object())
+    # A real chat model, not a bare object: the same instance is handed to
+    # `SummarizationMiddleware`, which calls `with_retry()` on it.
+    monkeypatch.setattr(
+        agent_mod, "build_model",
+        lambda *a, **kw: GenericFakeChatModel(messages=iter([AIMessage(content="ok")])),
+    )
     monkeypatch.setattr(agent_mod, "build_backend", lambda *a, **kw: object())
     monkeypatch.setattr(agent_mod, "agent_tools", no_tools)
     asyncio.run(agent_mod.init_agent(**kwargs))
@@ -148,10 +139,15 @@ def test_detects_email(monkeypatch):
     assert _net(monkeypatch).pii_type == "email"
 
 
-def test_strategy_is_mask_not_redact(monkeypatch):
-    """`redact` collapses every identity to one token, which would destroy the
-    grouping the concentration finding depends on."""
-    assert _net(monkeypatch).strategy == "mask"
+def test_strategy_is_redact(monkeypatch):
+    """`redact` replaces every address with one constant token.
+
+    It was `mask` until `9d10a75`, and the change is a privacy fix rather than a
+    tuning choice: `mask` renders `budi.santoso@****.com`, leaving the local part
+    intact. The system prompt forbids exactly that — "a local part alone" — so
+    the previous setting leaked the identity it was meant to protect.
+    """
+    assert _net(monkeypatch).strategy == "redact"
 
 
 def test_tool_results_are_scrubbed(monkeypatch):
@@ -189,26 +185,58 @@ def test_an_address_never_reaches_the_model(monkeypatch):
     assert "@pertamina.com" not in scrubbed
 
 
-def test_distinct_people_stay_distinct(monkeypatch):
-    """The property `mask` buys over `redact`: grouping survives."""
+def test_every_identity_collapses_to_one_token(monkeypatch):
+    """What `redact` trades away: two people are indistinguishable to the model.
+
+    Acceptable because the answer never needs the identity — only the shape of
+    the distribution, which survives as separate rows (see the next test).
+    """
     out = _net(monkeypatch).before_model(
         _tool_state(_rows((HERO, 701), (SECOND, 54))), None)
-    assert len(_keys(out["messages"][-1].content)) == 2
+    assert len(_keys(out["messages"][-1].content)) == 1
 
 
-def test_the_same_person_masks_the_same_way(monkeypatch):
+def test_the_ranking_the_answer_needs_still_survives(monkeypatch):
+    """The concentration finding is a rank and a share, not a name. Redaction
+    rewrites the identity cell and leaves the counts alone, so the rows stay
+    separate and ordered — which is all the answer is built from.
+    """
+    out = _net(monkeypatch).before_model(
+        _tool_state(_rows((HERO, 701), (SECOND, 54))), None)["messages"][-1].content
+    counts = [c.split("|")[2] for c in out.splitlines() if c.count("|") >= 3
+              and c.split("|")[2].strip().isdigit()]
+    assert counts == ["701", "54"]
+
+
+def test_no_fragment_of_an_address_reaches_the_model(monkeypatch):
+    """The property `mask` failed. A local part picks the person out as surely
+    as the whole address does."""
+    out = _net(monkeypatch).before_model(
+        _tool_state(_rows((HERO, 701), (SECOND, 54))), None)["messages"][-1].content
+    for fragment in ("budi", "santoso", "siti", "wijaya", "pertamina.com"):
+        assert fragment not in out.lower(), fragment
+
+
+def test_one_person_does_not_split_across_rows(monkeypatch):
+    """Trivially true under `redact`, which collapses everything — but it was
+    the point of `mask` and the assertion still guards the row shape: a match
+    that swallowed the separator would leave two differently-mangled cells."""
     out = _net(monkeypatch).before_model(_tool_state(_rows((HERO, 1), (HERO, 2))), None)
     assert len(_keys(out["messages"][-1].content)) == 1, "one person must not split"
 
 
-def test_the_d5_lesson_survives(monkeypatch):
-    """The digest is over the raw value, so an un-normalised aggregation still
-    splits the hero across spellings and still understates the concentration —
-    the planted defect is not quietly repaired by the middleware."""
+def test_the_d5_defect_is_no_longer_visible_downstream(monkeypatch):
+    """Under `mask` the three spellings stayed distinct, so a reader of the tool
+    output could see the planted duplicate. Under `redact` they collapse.
+
+    Not a regression in the lesson: the defect is meant to be handled in SQL
+    with `lower(trim(...))` *before* aggregating, which happens server-side and
+    upstream of any redaction. Detecting it by eye in a result the middleware
+    has already rewritten was never the mechanism.
+    """
     out = _net(monkeypatch).before_model(_tool_state(_rows(
         (HERO, 1), (HERO.upper(), 1), ("Budi.Santoso@pertamina.com", 1))), None)
-    assert len(_keys(out["messages"][-1].content)) > 1, \
-        "normalising for the agent would delete the D5 lesson"
+    assert len(_keys(out["messages"][-1].content)) == 1
 
 
 def test_an_address_in_the_question_is_scrubbed(monkeypatch):
@@ -266,8 +294,10 @@ def test_a_pipe_separator_is_swallowed_upstream():
 def test_our_pattern_stops_at_the_pipe():
     """The one difference from upstream, and the reason for the whole file.
 
-    A separator eaten by the match takes the next cell with it, so the same
-    person masks two ways and the grouping `strategy="mask"` buys is lost.
+    A separator eaten by the match takes the next cell with it. Under `redact`
+    the cost is the count rather than the grouping: the row loses a cell, the
+    figure the answer was built from disappears into the replacement token, and
+    nothing about the output looks wrong.
     """
     assert re.findall(middleware_mod.EMAIL_PATTERN, f"{HERO}|701") == [HERO]
     for sep in ("|", ",", '"', " ", ":"):

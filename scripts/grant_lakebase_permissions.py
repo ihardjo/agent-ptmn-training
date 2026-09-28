@@ -1,19 +1,12 @@
 """Grant Lakebase Postgres permissions to a Databricks Apps service principal.
 
-After deploying the app, run this script to grant the app's SP access to all
-Lakebase schemas and tables used by the agent's memory.
+Run after deploying, to give the app's service principal access to the schemas
+and tables the agent's memory uses.
 
 Usage:
-    # Get the SP client ID from your deployed app:
     databricks apps get <app-name> --output json | jq -r '.service_principal_client_id'
-
-    # Autoscaling instance (endpoint):
-    uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type <type> --autoscaling-endpoint <endpoint>
-
-    # Autoscaling instance (project + branch):
-    uv run python scripts/grant_lakebase_permissions.py <sp-client-id> --memory-type <type> --project <project> --branch <branch>
-
-    # Memory types: langgraph, openai
+    uv run python scripts/grant_lakebase_permissions.py <sp-client-id> \
+        --memory-type <langgraph|openai> --autoscaling-endpoint <endpoint>
 """
 
 import argparse

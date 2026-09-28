@@ -2,26 +2,8 @@
 """
 Quickstart setup script for Databricks agent development.
 
-NOTE: Keep this comment up to date when editing the script.
-
-Steps:
-  1. Check prerequisites — uv, Node.js (>=20.19/22.12/23), npm, Databricks CLI.
-     Exit if any are missing or Node version is unsupported by Vite.
-  2. Set up .env — copy .env.example → .env (or create a minimal one).
-  3. Databricks auth — use --profile if provided, otherwise list existing profiles
-     for interactive selection, or create a new DEFAULT profile with --host / prompt.
-     Validate the profile; authenticate via OAuth if invalid. Save profile to .env.
-  4. App binding (optional) — if --app-name is provided (or entered interactively),
-     update databricks.yml with the app name, then fetch the app's resources via API.
-     If the app has a postgres or database resource, build the lakebase config from it
-     (and resolve the endpoint name for local dev .env via the API).
-  5. Databricks username — resolve it for PGUSER on the Lakebase paths.
-  6. Lakebase setup — skip if already resolved from app resources (step 4).
-     Otherwise: if the template requires Lakebase (has LAKEBASE_* in databricks.yml)
-     or CLI flags are provided, set up via CLI args or interactive selection.
-     For non-memory templates, optionally offer Lakebase for chat UI history.
-     Update databricks.yml resources and env vars.
-  7. Print summary with Lakebase details.
+Checks prerequisites, writes `.env`, configures Databricks auth, optionally binds
+an existing app and sets up Lakebase.
 
 Usage:
     uv run quickstart [OPTIONS]
@@ -30,7 +12,7 @@ Options:
     --profile NAME    Use specified Databricks profile (non-interactive)
     --host URL        Databricks workspace URL (for initial setup)
     --lakebase-autoscaling-endpoint NAME  Autoscaling Lakebase endpoint name
-    --lakebase-create-new NAME  Create a new Lakebase autoscaling project with this name
+    --lakebase-create-new NAME  Create a new Lakebase autoscaling project
     --skip-lakebase   Skip Lakebase setup (non-interactive / CI use)
     --app-name NAME   Existing Databricks app name to bind this bundle to
     -h, --help        Show this help message

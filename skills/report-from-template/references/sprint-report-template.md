@@ -11,7 +11,7 @@
 
 **Reporting period:** «start date» to «end date»
 **Prepared:** «date prepared»
-**Source:** `workshop_ai_platform.default.sdlc_tickets`, «row count» tickets
+**Source:** `{{TABLE}}`, «row count» tickets
 
 ---
 

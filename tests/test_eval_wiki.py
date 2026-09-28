@@ -1,14 +1,8 @@
 """The evaluation's handling of wiki activity.
 
-What is asserted here is easy to get wrong and invisible when wrong: that
-reading the wiki is not counted as a statement against the data, and that
-opening a document is distinguished from merely listing the tier — including
-when the document is the `.docx` SOP, which is where the one fact no SQL query
-can supply actually lives.
-
-The privacy-over-durable-writes checks that used to sit here went with
-`no_pii_leak`, which no current dataset item exercises. `PIIMiddleware` is
-tested directly in `test_output_redaction.py`.
+Reading the wiki must not count as a statement against the data, and opening a
+document must be distinguished from listing the tier — including when the
+document is a `.docx`, which is where the one fact no SQL query can supply lives.
 """
 
 from __future__ import annotations

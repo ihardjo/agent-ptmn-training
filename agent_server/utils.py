@@ -13,11 +13,15 @@ from mlflow.types.responses import (
     create_text_output_item,
 )
 
+from agent_server.approvals import approval_requests
+
 logger = logging.getLogger(__name__)
 
 TEXT = "text"
 REASONING = "reasoning"
 TOOL_CALL = "tool_call"
+# A run paused for human approval. Payload is the LangGraph Interrupt.
+APPROVAL = "approval"
 TOOL_RESULT = "tool_result"
 
 
@@ -117,8 +121,12 @@ async def _iter_message_parts(async_stream: AsyncIterator[Any]) -> AsyncGenerato
                 for part in _content_parts(message):
                     yield part
         elif mode == "updates":
-            # A node returning nothing shows up as {node: None}, an interrupt puts
-            # a tuple here instead of a state update.
+            # An interrupt is not a state update: it arrives under its own key as
+            # a tuple, and is the run stopping to ask rather than anything to
+            # render as a message.
+            for interrupt in payload.get("__interrupt__", ()) or ():
+                yield APPROVAL, interrupt
+            # A node returning nothing shows up as {node: None}.
             for update in payload.values():
                 if not isinstance(update, dict):
                     continue
@@ -205,6 +213,12 @@ async def _iter_responses_api_events(
         if done := close_run():
             yield done
         open_kind = None
+        if kind == APPROVAL:
+            # One item per pending call. The client renders each as a prompt and
+            # replays an `mcp_approval_response` per decision.
+            for request in approval_requests(payload):
+                yield _item_done(request)
+            continue
         if kind == TOOL_CALL:
             # The provider learns a call's name only here, so this has to precede
             # its output. `arguments` is a JSON string, not an object.

@@ -63,14 +63,9 @@ def test_a_single_rule_covers_both_read_only_tiers(rules):
 # ── 4.3 the tier is optional ─────────────────────────────────────────────────
 
 
-def test_no_wiki_routes_without_the_volume_variable(monkeypatch):
-    monkeypatch.delenv("DATABRICKS_WIKI_VOLUME", raising=False)
-    assert wiki_routes() == {}
-
-
 def test_no_wiki_routes_without_jakarta_credentials(monkeypatch):
-    """The Volume is reached with the SQL tools' credential; absent it, no tier."""
-    monkeypatch.setenv("DATABRICKS_WIKI_VOLUME", "/Volumes/c/s/v")
+    """The credential is now the only gate. The Volume lives in another
+    workspace, so without it there is no tier however the path is spelled."""
     for key in (
         "DATABRICKS_JAKARTA_HOST",
         "DATABRICKS_JAKARTA_CLIENT_ID",
@@ -84,7 +79,6 @@ def test_no_wiki_routes_without_jakarta_credentials(monkeypatch):
 
 def test_a_client_that_cannot_be_built_degrades_to_no_tier(monkeypatch):
     """A failure here must cost the tier, not the process."""
-    monkeypatch.setenv("DATABRICKS_WIKI_VOLUME", "/Volumes/c/s/v")
     monkeypatch.setattr(
         "agent_server.backends.jakarta_workspace_client",
         lambda: (_ for _ in ()).throw(RuntimeError("bad host")),
@@ -93,7 +87,9 @@ def test_a_client_that_cannot_be_built_degrades_to_no_tier(monkeypatch):
 
 
 def test_backend_still_builds_without_the_wiki(monkeypatch):
-    monkeypatch.delenv("DATABRICKS_WIKI_VOLUME", raising=False)
+    for key in ("DATABRICKS_JAKARTA_HOST", "DATABRICKS_JAKARTA_CLIENT_ID",
+                "DATABRICKS_JAKARTA_CLIENT_SECRET", "DATABRICKS_JAKARTA_PROFILE"):
+        monkeypatch.delenv(key, raising=False)
     be = build_backend()
     assert WIKI_SOURCE_MOUNT not in be.routes
     assert WIKI_MOUNT not in be.routes
@@ -103,38 +99,30 @@ def test_backend_still_builds_without_the_wiki(monkeypatch):
 
 
 def test_both_wiki_prefixes_are_routed_when_configured(monkeypatch, client):
-    monkeypatch.setenv("DATABRICKS_WIKI_VOLUME", "/Volumes/c/s/v")
     assert sorted(wiki_routes(client)) == sorted([WIKI_SOURCE_MOUNT, WIKI_MOUNT])
 
 
 def test_the_guard_is_on_notes_and_off_on_source(monkeypatch, client):
-    monkeypatch.setenv("DATABRICKS_WIKI_VOLUME", "/Volumes/c/s/v")
     routes = wiki_routes(client)
 
 
 def test_the_bare_wiki_prefix_is_now_the_bundle(monkeypatch, client):
     """`/wiki/` is a route, which reverses what this file used to assert.
 
-    The wiki used to live at `/wiki/notes/`, and `/wiki/` was left unmounted so
-    a loose `/wiki/x.md` fell through to scratch instead of quietly landing on
-    the Volume. Collapsing that level removes the protection: anything written
-    under `/wiki/` is durable now. The test is kept, inverted, so the change is
-    visible to whoever reads the history rather than silently absent.
+    `/wiki/` was left unmounted so a loose `/wiki/x.md` fell through to scratch;
+    collapsing that level makes anything written there durable. Kept and
+    inverted, so the change is visible rather than silently absent.
     """
-    monkeypatch.setenv("DATABRICKS_WIKI_VOLUME", "/Volumes/c/s/v")
     assert "/wiki/" in build_backend(wiki_client=client).routes
 
 
 def test_a_raw_path_still_reaches_the_landing_tree(monkeypatch, client):
     """The property the whole layout rests on: longest-prefix routing.
 
-    `/wiki/` and `/wiki/raw/` now overlap, and only the longer match keeps the
-    read-only tier read-only. If `CompositeBackend` ever matched shortest-first,
-    `/wiki/raw/x.md` would resolve into the writable bundle and the deny rule
-    would be guarding a path nothing routes to — which looks exactly like
-    working.
+    Only the longer match keeps the read-only tier read-only. Shortest-first
+    would resolve `/wiki/raw/x.md` into the writable bundle, leaving the deny
+    rule guarding a path nothing routes to.
     """
-    monkeypatch.setenv("DATABRICKS_WIKI_VOLUME", "/Volumes/c/s/v")
     be = build_backend(wiki_client=client)
     routes = be.routes
     match = max((p for p in routes if "/wiki/raw/x.md".startswith(p)), key=len)

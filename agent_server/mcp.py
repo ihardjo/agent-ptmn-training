@@ -1,9 +1,7 @@
 """Discovering the SQL tools the MCP server offers, once per process.
 
-`agent_server.tools` knows how to *reach* the server; this module knows how
-often to ask it. The split matters because the answer is static and the asking
-is not cheap: a `tools/list` is a session plus a round trip to another region,
-and `init_agent()` runs per request.
+The answer is static and the asking is not cheap — a `tools/list` is a session
+plus a cross-region round trip, and `init_agent()` runs per request.
 """
 
 import asyncio
@@ -40,24 +38,15 @@ async def mcp_tools(
 ) -> list[Any]:
     """Every SQL tool the server exposes, or only `names` of them.
 
-    This is `langchain.mcp.MCPAdapter.list_tools(cache_mode="use")` — serve a
-    cached tool list when one is present, call the server when it is not —
-    reimplemented because that adapter is built on `fastmcp.Client` and reaches
-    a server by URL. Ours is reached with Databricks OAuth, which
-    `DatabricksOAuthClientProvider` holds and refreshes for us, so the client
-    stays `databricks_langchain`'s and the caching comes here instead. Upstream
-    keeps its cache on the client (SEP-2549); `DatabricksMultiServerMCPClient`
-    has none, and its `get_tools()` opens a session and re-lists every call.
-
-    A failure is not cached, so a server that recovers degrades this run rather
-    than the whole process. Filtering happens on the way out, so a narrow
-    selection never becomes the process's idea of what the server offers.
+    `MCPAdapter.list_tools(cache_mode="use")` reimplemented, because that
+    adapter reaches a server by URL and ours needs Databricks OAuth —
+    `DatabricksMultiServerMCPClient` has no cache and re-lists every call.
+    Failures are not cached, so a recovered server degrades this run only.
 
     Args:
         names: the tools to mount, or None for every tool the server offers.
-        cache_mode: as upstream — `use` serves the cached list when there is
-            one, `refresh` calls the server and repopulates, and `bypass`
-            calls the server and leaves the cache alone.
+        cache_mode: `use` serves the cached list, `refresh` repopulates it,
+            `bypass` calls the server and leaves the cache alone.
     """
     global _mcp_tools
     if cache_mode not in CACHE_MODES:
